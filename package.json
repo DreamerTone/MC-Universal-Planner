@@ -1,0 +1,28 @@
+{
+  "name": "mc-universal-planner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Production-grade Minecraft-compatible planning, rendering, and simulation engine",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "build:desktop": "turbo run build --filter=@mc-planner/desktop",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean && rimraf node_modules",
+    "test": "turbo run test"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "rimraf": "^5.0.5",
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.1.0"
+}
