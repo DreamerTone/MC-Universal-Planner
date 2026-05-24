@@ -1,0 +1,21 @@
+{
+  "name": "@mc-planner/world-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chunk storage, block registry, voxel shapes, and adjacency for MC Universal Planner",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@mc-planner/shared": "workspace:*",
+    "@mc-planner/ecs": "workspace:*"
+  },
+  "devDependencies": {
+    "rimraf": "^5.0.5",
+    "typescript": "^5.4.0"
+  }
+}
