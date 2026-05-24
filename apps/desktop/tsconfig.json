@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "dist/renderer",
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+  },
+  "include": ["renderer/src/**/*", "preload/**/*"],
+  "exclude": ["node_modules", "dist", "electron"]
+}

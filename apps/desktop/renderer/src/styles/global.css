@@ -1,0 +1,56 @@
+/* apps/desktop/renderer/src/styles/global.css */
+/* Base reset and design tokens for the planner UI */
+
+:root {
+  /* Color palette — dark theme aligned with Minecraft aesthetic */
+  --color-bg-primary:    #1a1a1a;
+  --color-bg-secondary:  #242424;
+  --color-bg-tertiary:   #2e2e2e;
+  --color-bg-panel:      #1f1f1f;
+  --color-border:        #3a3a3a;
+  --color-border-focus:  #5b8c5a;
+
+  --color-text-primary:  #e0e0e0;
+  --color-text-secondary:#a0a0a0;
+  --color-text-muted:    #666666;
+
+  --color-accent:        #5b8c5a;  /* Minecraft grass green */
+  --color-accent-hover:  #6ea86d;
+  --color-accent-danger: #c0392b;
+  --color-accent-warning:#d4870e;
+
+  /* Layout */
+  --sidebar-width:       280px;
+  --toolbar-height:      40px;
+  --statusbar-height:    24px;
+  --panel-border-radius: 4px;
+
+  /* Typography */
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-size-sm:  12px;
+  --font-size-md:  13px;
+  --font-size-lg:  15px;
+
+  /* Transitions */
+  --transition-fast: 80ms ease;
+  --transition-std:  150ms ease;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-md);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  user-select: none; /* Prevents text selection during drag operations */
+}
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--color-bg-primary); }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-muted); }
