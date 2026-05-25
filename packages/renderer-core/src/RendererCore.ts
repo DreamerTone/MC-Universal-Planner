@@ -5,7 +5,7 @@
  */
 
 import * as THREE from 'three'
-import type { World } from '@mc-planner/world-engine'
+import type { World, BlockStateId } from '@mc-planner/world-engine'
 import { WorldRenderer } from './WorldRenderer'
 import type { BlockShaderUniforms } from './shaders/BlockShader'
 import type { BakedModelRegistry } from './baking/BakedModelRegistry'
@@ -25,6 +25,7 @@ export class RendererCore {
   private readonly chunkGroup: THREE.Group
   private worldRenderer: WorldRenderer | null = null
   private currentWorld: World | null = null
+  private currentBakedModelRegistry: BakedModelRegistry | null = null
   private blockMaterial: THREE.ShaderMaterial | null = null
   private blockShaderUniforms: BlockShaderUniforms | null = null
   private resizeObserver: ResizeObserver
@@ -124,7 +125,13 @@ export class RendererCore {
     this.currentWorld?.chunks.markAllDirty()
   }
 
+  syncRuntimeBlockState(stateId: BlockStateId | number): void {
+    if (!this.currentBakedModelRegistry || !this.worldRenderer) return
+    this.worldRenderer.syncBlockState(this.currentBakedModelRegistry, stateId)
+  }
+
   setBakedModelRegistry(registry: BakedModelRegistry): void {
+    this.currentBakedModelRegistry = registry
     this.worldRenderer?.setBakedModelRegistry(registry)
     console.log('[RendererCore] BakedModelRegistry handed to WorldRenderer')
   }
@@ -134,6 +141,7 @@ export class RendererCore {
     this.currentWorld = world
     this.worldRenderer = new WorldRenderer(world, this)
     if (this.blockMaterial) this.worldRenderer.setBlockMaterial(this.blockMaterial)
+    if (this.currentBakedModelRegistry) this.worldRenderer.setBakedModelRegistry(this.currentBakedModelRegistry)
     console.log('[RendererCore] World attached')
   }
 
