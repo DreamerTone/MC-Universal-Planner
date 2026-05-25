@@ -5,7 +5,7 @@
   "description": "Electron desktop application shell for MC Universal Planner",
   "main": "dist/electron/main.js",
   "scripts": {
-    "dev": "concurrently \"vite\" \"electronmon dist/electron/main.js\"",
+    "dev": "tsc -b tsconfig.electron.json && concurrently \"vite\" \"tsc -b -w tsconfig.electron.json --preserveWatchOutput\" \"electronmon dist/electron/main.js\"",
     "build": "tsc -p tsconfig.electron.json && vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "build:renderer": "vite build",
