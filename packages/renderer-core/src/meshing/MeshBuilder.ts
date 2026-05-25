@@ -7,7 +7,7 @@
  * Vertex layout matches the BlockShader attribute contract:
  *   position  vec3   (3 floats)
  *   normal    vec3   (3 floats)
- *   uv        vec2   (2 floats)  — atlas space, tiled by quad extent for greedy merges
+ *   uv        vec2   (2 floats)  — atlas space, bounded to the source sprite rect
  *   ao        float  (1 float)   — per-vertex ambient occlusion, [0.2, 1.0]
  *   tintColor vec3   (3 floats)  — biome tint multiplier; (1,1,1) when no tint
  *
@@ -15,13 +15,14 @@
  * fragment shader derives it from the normal. Baking it in here would
  * double-darken the result.
  *
- * UV tiling for greedy merges:
- *  When N×M adjacent identical faces are merged into one quad we still want
- *  the texture to TILE across the merged area, not stretch. We achieve this
- *  by emitting UVs that span [u0..u0 + (u1-u0)*N, v0..v0 + (v1-v0)*M] and
- *  relying on the atlas texture's REPEAT wrap (or shader-side fract() for a
- *  strict atlas). For now the atlas is built with no padding, so UVs are
- *  emitted in absolute atlas space; tiling logic activates only when N>1.
+ * Atlas UV contract:
+ *  The baker has already remapped model-space UVs [0..16] into atlas-space
+ *  UVs [0..1] for the exact sprite rectangle. The greedy mesher may merge
+ *  many identical block faces into one large quad, but we must NOT multiply
+ *  atlas UV deltas by the merged width/height here. Doing so walks out of
+ *  the sprite's sub-rect and samples unrelated atlas texels. True tiled
+ *  greedy faces need a future shader path that carries sprite bounds plus
+ *  local tile coordinates separately.
  */
 
 import { UncompressedQuad, RenderBuffers } from '../types/meshing';
@@ -56,11 +57,6 @@ export class MeshBuilder {
             // Face normal — constant across the quad
             const n = this.getNormalVector(quad.faceDir);
 
-            // UVs tile across the merged area: width=quad.w on d1, height=quad.h on d2.
-            // Corner ordering is matched to getQuadVertices below.
-            const du = quad.u1 - quad.u0;
-            const dv = quad.v1 - quad.v0;
-
             for (let v = 0; v < 4; v++) {
                 const vp = verts[v]!;
 
@@ -72,12 +68,14 @@ export class MeshBuilder {
                 normal[vIdx * 3 + 1] = n[1];
                 normal[vIdx * 3 + 2] = n[2];
 
-                // Vertex order matches a CCW winding (see getQuadVertices):
-                //  v0: (u0, v0)  v1: (u0+du*w, v0)  v2: (u0+du*w, v0+dv*h)  v3: (u0, v0+dv*h)
+                // Vertex order matches a CCW winding (see getQuadVertices).
+                // Keep UVs inside the baked atlas sprite rect. The previous
+                // du * quad.w / dv * quad.h expansion made merged quads sample
+                // outside their sprite and hit unrelated atlas texels.
                 const onMaxU = (v === 1 || v === 2);
                 const onMaxV = (v === 2 || v === 3);
-                uv[vIdx * 2]     = quad.u0 + (onMaxU ? du * quad.w : 0);
-                uv[vIdx * 2 + 1] = quad.v0 + (onMaxV ? dv * quad.h : 0);
+                uv[vIdx * 2]     = onMaxU ? quad.u1 : quad.u0;
+                uv[vIdx * 2 + 1] = onMaxV ? quad.v1 : quad.v0;
 
                 // Per-vertex AO — the shader applies face shading on top.
                 ao[vIdx] = quad.shade ? (quad.ao[v] ?? 1.0) : 1.0;
