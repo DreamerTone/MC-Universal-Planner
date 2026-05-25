@@ -57,14 +57,36 @@ export async function loadJarFiles(
 
   // Phase 2: Check cache — if all JARs are cached with matching hashes,
   // restore from cache and skip extraction.
+  //
+  // We sanity-check the cached payload before trusting it: a previous bug
+  // in the indexer could persist an AssetIndex with populated counts but
+  // an empty entries[] array. If we blindly returned that, every consumer
+  // (BlockstateLoader, AtlasBuilder) would silently produce 0 results and
+  // the user would see a working pipeline that renders nothing.
   const cacheKey = buildCacheKey(jarHashes)
   const cached = await readCacheIndex(cacheKey)
 
   if (cached) {
-    console.log('[AssetPipeline] Cache hit — restoring asset index from cache')
-    assetRegistry.restoreFromCacheIndex(cached)
-    onProgress({ phase: 'complete', current: cached.entries.length, total: cached.entries.length })
-    return cached
+    const headerTotal =
+      (cached.blockstateCount ?? 0) +
+      (cached.modelCount ?? 0) +
+      (cached.textureCount ?? 0)
+    const entriesEmpty = !cached.entries || cached.entries.length === 0
+    if (entriesEmpty && headerTotal > 0) {
+      console.warn(
+        '[AssetPipeline] Cached index is corrupt (header counts > 0 but ' +
+        'entries[] is empty). Discarding and re-extracting.'
+      )
+    } else {
+      console.log(
+        `[AssetPipeline] Cache hit — restoring ${cached.entries.length} entries from cache`
+      )
+      assetRegistry.restoreFromCacheIndex(cached)
+      onProgress({ phase: 'complete', current: cached.entries.length, total: cached.entries.length })
+      return cached
+    }
+  } else {
+    console.log('[AssetPipeline] Cache miss — extracting JARs fresh')
   }
 
   // Phase 3: Extract assets from JARs
@@ -115,6 +137,21 @@ export async function loadJarFiles(
     })),
     jarHashes,
   }
+
+  // Sanity check before persisting: if header counts disagree with the
+  // actual entries[] length, something went wrong upstream and we'd be
+  // poisoning the cache for next time.
+  if (index.entries.length === 0 && (blockstateCount + modelCount + textureCount) > 0) {
+    console.error(
+      '[AssetPipeline] Refusing to cache corrupt index: ' +
+      `header reports ${blockstateCount}+${modelCount}+${textureCount} but entries[] is empty.`
+    )
+    return index
+  }
+  console.log(
+    `[AssetPipeline] Indexed ${index.entries.length} entries ` +
+    `(blocks:${blockstateCount}, models:${modelCount}, textures:${textureCount})`
+  )
 
   // Persist index to cache for next launch
   await writeCacheIndex(cacheKey, index)
