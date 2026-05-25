@@ -2,11 +2,6 @@
  * packages/renderer-core/src/RendererCore.ts
  *
  * Central renderer — owns WebGL2 context, Three.js scene, and RAF loop.
- *
- * Integration points (updated Stage 7+8):
- *  - setBlockMaterial(): replaces placeholder material with block shader
- *  - invalidateAllChunks(): re-queues all sections for remeshing after pipeline
- *  - pipeline: PipelineOrchestrator drives atlas→baker→shader flow
  */
 
 import * as THREE from 'three'
@@ -72,9 +67,6 @@ export class RendererCore {
       distance: 48,
       yaw: Math.PI / 4,
       pitch: Math.PI / 5,
-      // The current verification scene is a 1-block-thick platform. Keep the
-      // orbit camera above the horizon so users cannot accidentally orbit under
-      // or through the slab and mistake inside/back-side views for mesh bugs.
       minPitch: 0.05,
       maxPitch: Math.PI / 2 - 0.05,
       minDistance: 12,
@@ -104,10 +96,7 @@ export class RendererCore {
   setBlockMaterial(material: THREE.ShaderMaterial, uniforms: BlockShaderUniforms): void {
     this.blockMaterial = material
     this.blockShaderUniforms = uniforms
-
-    if (this.worldRenderer) {
-      this.worldRenderer.setBlockMaterial(material)
-    }
+    if (this.worldRenderer) this.worldRenderer.setBlockMaterial(material)
 
     if (this.scene.fog instanceof THREE.Fog) {
       uniforms.uFogColor.value.set(this.scene.fog.color)
@@ -123,6 +112,18 @@ export class RendererCore {
     console.log('[RendererCore] All chunks invalidated for remesh')
   }
 
+  setBlock(x: number, y: number, z: number, stateId: number): void {
+    this.currentWorld?.chunks.setBlock(x, y, z, stateId as any)
+  }
+
+  getBlock(x: number, y: number, z: number): number {
+    return (this.currentWorld?.chunks.getBlock(x, y, z) as number | undefined) ?? 0
+  }
+
+  markAllDirty(): void {
+    this.currentWorld?.chunks.markAllDirty()
+  }
+
   setBakedModelRegistry(registry: BakedModelRegistry): void {
     this.worldRenderer?.setBakedModelRegistry(registry)
     console.log('[RendererCore] BakedModelRegistry handed to WorldRenderer')
@@ -132,9 +133,7 @@ export class RendererCore {
     this.worldRenderer?.dispose()
     this.currentWorld = world
     this.worldRenderer = new WorldRenderer(world, this)
-    if (this.blockMaterial) {
-      this.worldRenderer.setBlockMaterial(this.blockMaterial)
-    }
+    if (this.blockMaterial) this.worldRenderer.setBlockMaterial(this.blockMaterial)
     console.log('[RendererCore] World attached')
   }
 
