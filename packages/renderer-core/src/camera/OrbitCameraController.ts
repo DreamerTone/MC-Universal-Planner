@@ -95,6 +95,17 @@ export class OrbitCameraController {
     this.dom.addEventListener('contextmenu', this.onContextMenu)
 
     this.apply()
+
+    // TEMP: diagnostic so we can confirm at runtime that the controller
+    // was instantiated AND bound to the actual on-screen canvas. If the
+    // dimensions are 0×0 the canvas isn't receiving pointer events and
+    // the layout is the bug, not the camera math.
+    const r = (dom as HTMLElement).getBoundingClientRect()
+    console.log('[OrbitCamera] attached', {
+      tag: (dom as HTMLElement).tagName,
+      rect: `${Math.round(r.width)}x${Math.round(r.height)} @ (${Math.round(r.left)},${Math.round(r.top)})`,
+      initialPos: this.camera.position.toArray().map(n => Math.round(n)),
+    })
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -122,6 +133,11 @@ export class OrbitCameraController {
   // ── Event handlers ────────────────────────────────────────────────────────
 
   private handleMouseDown(e: MouseEvent): void {
+    console.log('[OrbitCamera] mousedown', {
+      button: e.button,
+      target: (e.target as HTMLElement)?.tagName,
+      matches: e.target === this.dom,
+    })
     // Only react to clicks on the canvas itself
     if (e.target !== this.dom && !(this.dom as HTMLElement).contains(e.target as Node)) return
     this.activeButton = e.button as 0 | 1 | 2
@@ -130,8 +146,13 @@ export class OrbitCameraController {
     e.preventDefault()
   }
 
+  private moveLogCount = 0
   private handleMouseMove(e: MouseEvent): void {
     if (this.activeButton === -1) return
+
+    if (this.moveLogCount++ < 3) {
+      console.log('[OrbitCamera] drag move', { btn: this.activeButton, dx: e.movementX, dy: e.movementY })
+    }
 
     const dx = e.clientX - this.lastX
     const dy = e.clientY - this.lastY
