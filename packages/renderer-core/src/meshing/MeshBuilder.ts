@@ -47,13 +47,15 @@ export class MeshBuilder {
                 vIdx++;
             }
 
+            // Vertex order is 0=top/left, 1=top/right, 2=bottom/right, 3=bottom/left.
+            // Use outward-facing winding for all face vertex layouts below.
             const base = q * 4;
             index[iIdx++] = base;
-            index[iIdx++] = base + 3;
-            index[iIdx++] = base + 1;
             index[iIdx++] = base + 1;
             index[iIdx++] = base + 3;
+            index[iIdx++] = base + 1;
             index[iIdx++] = base + 2;
+            index[iIdx++] = base + 3;
         }
 
         return { position, normal, uv, ao, tintColor, index };
