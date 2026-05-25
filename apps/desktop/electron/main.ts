@@ -28,6 +28,15 @@ import { initAppDirectories } from './windows/appDirectories'
 // or in a packaged production build.
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
+// In dev, disable Chromium's HTTP cache outright. Must be set BEFORE app
+// is ready so the switch is applied to the renderer process startup.
+// Without this, source edits to renderer-core / world-engine / etc were
+// served stale across electronmon restarts because Chromium served the
+// previously cached bundles instead of fetching from the Vite dev server.
+if (isDev) {
+  app.commandLine.appendSwitch('disable-http-cache')
+}
+
 let mainWindow: BrowserWindow | null = null
 
 function createMainWindow(): BrowserWindow {
@@ -78,8 +87,11 @@ function createMainWindow(): BrowserWindow {
 
 async function loadRenderer(win: BrowserWindow): Promise<void> {
   if (isDev) {
-    // In development, Vite dev server runs on port 5173
-    await win.loadURL('http://localhost:5173')
+    // In development, Vite dev server runs on port 5173. Append a unique
+    // cache-buster so Chromium can't reuse the previously cached index.html
+    // (and, by extension, the previously cached module graph) across restarts.
+    const buster = `t=${Date.now()}`
+    await win.loadURL(`http://localhost:5173/?${buster}`)
   } else {
     // In production, load the pre-built renderer index.html
     await win.loadFile(
