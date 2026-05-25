@@ -93,6 +93,20 @@ app.whenReady().then(async () => {
   // These are created under app.getPath('userData') in production.
   await initAppDirectories(isDev)
 
+  // In dev, wipe Chromium's HTTP and code caches before loading the renderer.
+  // Without this, Electron serves stale bundles from disk cache across
+  // restarts and Vite source edits don't actually take effect — you'd be
+  // editing files that Chromium decided to never re-fetch. Production
+  // builds load from the file:// protocol so this isn't needed there.
+  if (isDev) {
+    await session.defaultSession.clearCache()
+    await session.defaultSession.clearCodeCaches({})
+    await session.defaultSession.clearStorageData({
+      storages: ['shadercache', 'cachestorage', 'serviceworkers'],
+    })
+    console.log('[main] Dev renderer cache cleared')
+  }
+
   // Lock down CSP for renderer. WebGL2 data URIs and blob URLs are needed
   // for texture atlas streaming and worker-generated geometry buffers.
   // In dev, Vite's React Fast Refresh injects an inline preamble script and
