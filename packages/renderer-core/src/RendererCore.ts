@@ -96,6 +96,13 @@ export class RendererCore {
 
     console.log('[RendererCore v2-orbit] Initialized — WebGL2:', this.renderer.capabilities.isWebGL2,
       '— controller bound:', !!this.cameraController)
+
+    // Visible-outside-console proof that the latest source ran: the OS-level
+    // window title is impossible to cache, filter, or miss. If you see
+    // "MC Universal Planner [v2-orbit]" in the title bar, you're running
+    // fresh code. If you see only "MC Universal Planner", something is
+    // serving a stale renderer-core module.
+    document.title = 'MC Universal Planner [v2-orbit]'
   }
 
   // ── Pipeline integration ─────────────────────────────────────────────────
