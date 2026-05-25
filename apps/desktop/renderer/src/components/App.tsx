@@ -2,25 +2,9 @@
  * apps/desktop/renderer/src/components/App.tsx
  *
  * Root application component.
- *
- * Layout architecture:
- *  ┌─────────────────────────────────────────────────────┐
- *  │ Toolbar (file operations, tools, view modes)         │
- *  ├──────────┬──────────────────────────────┬────────────┤
- *  │ Left     │                              │ Right      │
- *  │ Panel    │   3D Viewport (Three.js)     │ Panel      │
- *  │ (block   │                              │ (props,    │
- *  │  picker) │                              │  recipes)  │
- *  ├──────────┴──────────────────────────────┴────────────┤
- *  │ Status Bar (position, FPS, asset status)             │
- *  └─────────────────────────────────────────────────────┘
- *
- * The 3D viewport is managed outside React via the ViewportRoot component.
- * React does NOT own the canvas; it owns the surrounding UI chrome.
- * This prevents React re-renders from interfering with the render loop.
  */
 
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import type { AssetIndex } from '@mc-planner/shared'
 import { Toolbar } from './Toolbar'
 import { ViewportRoot } from './ViewportRoot'
@@ -34,6 +18,23 @@ export function App(): React.JSX.Element {
   const [appState, setAppState] = useState<AppState>('welcome')
   const [projectPath, setProjectPath] = useState<string | null>(null)
   const [assetIndex, setAssetIndex] = useState<AssetIndex | null>(null)
+  const [selectedBlockId, setSelectedBlockId] = useState('minecraft:stone')
+  const [blockSearch, setBlockSearch] = useState('')
+
+  const blockIds = useMemo(() => {
+    if (!assetIndex) return []
+    const ids = assetIndex.entries
+      .filter(e => e.type === 'blockstate')
+      .map(e => e.resourceLocation)
+      .sort((a, b) => a.localeCompare(b))
+    return Array.from(new Set(ids))
+  }, [assetIndex])
+
+  const filteredBlockIds = useMemo(() => {
+    const q = blockSearch.trim().toLowerCase()
+    if (!q) return blockIds.slice(0, 200)
+    return blockIds.filter(id => id.toLowerCase().includes(q)).slice(0, 200)
+  }, [blockIds, blockSearch])
 
   const handleProjectOpen = (path: string) => {
     setProjectPath(path)
@@ -42,9 +43,12 @@ export function App(): React.JSX.Element {
 
   const handleAssetsLoaded = (index: AssetIndex) => {
     setAssetIndex(index)
-    // Diagnostic: counts on the index header should match the actual entries
-    // array. If header says 1168 blockstates but the array filter returns 0,
-    // the entries weren't serialised across IPC properly.
+    const firstBlock = index.entries.find(e => e.type === 'blockstate')?.resourceLocation
+    if (firstBlock && selectedBlockId === 'minecraft:stone') {
+      const hasStone = index.entries.some(e => e.type === 'blockstate' && e.resourceLocation === 'minecraft:stone')
+      setSelectedBlockId(hasStone ? 'minecraft:stone' : firstBlock)
+    }
+
     const blockstateRows = index.entries.filter(e => e.type === 'blockstate').length
     const textureRows = index.entries.filter(e => e.type === 'texture').length
     const typeHistogram: Record<string, number> = {}
@@ -56,8 +60,6 @@ export function App(): React.JSX.Element {
       header: { blocks: index.blockstateCount, textures: index.textureCount },
       entriesArray: { total: index.entries.length, blockstate: blockstateRows, texture: textureRows },
     })
-    // Flatten the sample + histogram into a single-line log so the user
-    // doesn't need to click-expand the previous object.
     console.log('[App] entries type histogram:', JSON.stringify(typeHistogram))
     console.log('[App] first entry as JSON:', JSON.stringify(index.entries[0]))
     console.log('[App] entries 100/500/1000 as JSON:',
@@ -99,11 +101,73 @@ export function App(): React.JSX.Element {
           borderRight: '1px solid var(--color-border)',
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'auto',
+          overflow: 'hidden',
         }}>
           <AssetLoader onAssetsLoaded={handleAssetsLoaded} />
+
+          <div style={{
+            borderTop: '1px solid var(--color-border)',
+            padding: 10,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            minHeight: 0,
+            flex: 1,
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-primary)' }}>
+              BLOCK PICKER
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', wordBreak: 'break-all' }}>
+              Selected: {selectedBlockId}
+            </div>
+            <input
+              value={blockSearch}
+              onChange={e => setBlockSearch(e.target.value)}
+              placeholder="Search blocks..."
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '6px 8px',
+                borderRadius: 4,
+                border: '1px solid var(--color-border)',
+                background: 'var(--color-bg-primary)',
+                color: 'var(--color-text-primary)',
+              }}
+            />
+            <div style={{
+              overflow: 'auto',
+              border: '1px solid var(--color-border)',
+              borderRadius: 4,
+              minHeight: 0,
+              flex: 1,
+            }}>
+              {filteredBlockIds.map(id => (
+                <button
+                  key={id}
+                  onClick={() => setSelectedBlockId(id)}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '5px 8px',
+                    border: 0,
+                    borderBottom: '1px solid rgba(255,255,255,0.04)',
+                    cursor: 'pointer',
+                    background: id === selectedBlockId ? 'rgba(90, 160, 100, 0.35)' : 'transparent',
+                    color: id === selectedBlockId ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+                    fontSize: 11,
+                  }}
+                >
+                  {id.replace(/^minecraft:/, '')}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
+              Click platform: place at Y=64. Right-click: remove placed block.
+            </div>
+          </div>
         </aside>
-        <ViewportRoot assetIndex={assetIndex} />
+        <ViewportRoot assetIndex={assetIndex} selectedBlockId={selectedBlockId} />
       </div>
       <StatusBar />
     </div>
