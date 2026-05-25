@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "description": "Electron desktop application shell for MC Universal Planner",
-  "main": "dist/electron/main.js",
+  "main": "dist/electron/electron/main.js",
   "scripts": {
-    "dev": "tsc -b tsconfig.electron.json && concurrently \"vite\" \"tsc -b -w tsconfig.electron.json --preserveWatchOutput\" \"electronmon dist/electron/main.js\"",
+    "dev": "tsc -b tsconfig.electron.json && concurrently \"vite\" \"tsc -b -w tsconfig.electron.json --preserveWatchOutput\" \"electronmon dist/electron/electron/main.js\"",
     "build": "tsc -p tsconfig.electron.json && vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "build:renderer": "vite build",
