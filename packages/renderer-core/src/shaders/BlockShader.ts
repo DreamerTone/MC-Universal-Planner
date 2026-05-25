@@ -127,6 +127,12 @@ void main() {
   texColor.rgb = mix(texColor.rgb, uFogColor, fogFactor);
 
   gl_FragColor = vec4(texColor.rgb, 1.0);
+
+  // ShaderMaterial does not automatically run the same output transform as
+  // Three.js built-in materials. These chunks apply renderer tone mapping and
+  // convert linear shader color back into the renderer output color space.
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }
 `
 
@@ -167,6 +173,7 @@ export function createBlockShaderMaterial(
     depthTest:    true,
     alphaTest:    0.1,      // Discard pixels below 10% alpha (cutout)
     vertexColors: false,    // We use custom tintColor attribute, not Three.js vertexColors
+    toneMapped:   true,
   })
 
   return { material, uniforms }
