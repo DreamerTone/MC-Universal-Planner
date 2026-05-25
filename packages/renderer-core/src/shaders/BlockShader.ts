@@ -100,13 +100,21 @@ varying float vFogDepth;
 varying float vFaceShade;
 
 void main() {
-  // ── DIAGNOSTIC OVERRIDE ──────────────────────────────────────────────
-  // Forced solid red, no texture sampling, no discard, no AO multiply.
-  // If we see red blocks → geometry + transforms are fine; bug is in
-  // the texture/uv/alpha pipeline. If we still see nothing → geometry
-  // is degenerate or being frustum-culled. Reverted once the
-  // visibility question is answered.
-  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+  // ── DIAGNOSTIC: atlas / UV check ─────────────────────────────────────
+  // Sample the atlas straight, force alpha=1, NO discard, NO tint/ao/
+  // faceshade/skylight multipliers. Reading the result:
+  //   - Real stone texture visible        → atlas + UVs are fine; the
+  //     bug is in one of the multipliers (vTint, vAo, vFaceShade,
+  //     uSkyLight) being zero, or the discard was eating fragments.
+  //   - Solid black plates                → texture2D returns 0,0,0,0;
+  //     atlas texture isn't bound to uAtlas uniform.
+  //   - Garbled / wrong-colour pixels     → UVs are pointing somewhere
+  //     other than the stone sprite in the atlas.
+  //   - vUv shown as red/green gradient   → uncomment the second line
+  //     to inspect the actual UV coordinates being sent.
+  vec4 texColor = texture2D(uAtlas, vUv);
+  gl_FragColor  = vec4(texColor.rgb, 1.0);
+  // gl_FragColor = vec4(vUv.x, vUv.y, 0.0, 1.0); // UV visualisation
 }
 `
 
