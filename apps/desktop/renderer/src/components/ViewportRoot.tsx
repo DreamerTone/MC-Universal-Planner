@@ -23,6 +23,7 @@ export function ViewportRoot({ assetIndex, selectedBlockId }: ViewportRootProps)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<RendererCore | null>(null)
   const selectedBlockRef = useRef(selectedBlockId)
+  const previewRef = useRef<THREE.LineSegments | null>(null)
   const [rendererReadyTick, setRendererReadyTick] = React.useState(0)
 
   useEffect(() => {
@@ -59,6 +60,7 @@ export function ViewportRoot({ assetIndex, selectedBlockId }: ViewportRootProps)
 
       renderer.attachWorld(world)
       rendererRef.current = renderer
+      previewRef.current = createPlacementPreview(renderer)
       setRendererReadyTick(t => t + 1)
 
       console.log('[ViewportRoot] Renderer + World initialized. Test scene: 32×32 stone platform.')
@@ -68,6 +70,11 @@ export function ViewportRoot({ assetIndex, selectedBlockId }: ViewportRootProps)
 
     return () => {
       cancelled = true
+      if (previewRef.current) {
+        previewRef.current.geometry.dispose()
+        ;(previewRef.current.material as THREE.Material).dispose()
+        previewRef.current = null
+      }
       rendererRef.current?.destroy()
       rendererRef.current = null
     }
@@ -80,6 +87,30 @@ export function ViewportRoot({ assetIndex, selectedBlockId }: ViewportRootProps)
     let downX = 0
     let downY = 0
     let downButton = -1
+
+    const updatePreview = (clientX: number, clientY: number) => {
+      const renderer = rendererRef.current
+      const preview = previewRef.current
+      if (!renderer || !preview) return
+
+      const hit = raycastBlockFace(canvas, renderer, clientX, clientY)
+      if (!hit) {
+        preview.visible = false
+        return
+      }
+
+      const pos = hit.place
+      preview.position.set(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5)
+      preview.visible = true
+    }
+
+    const handlePointerMove = (e: PointerEvent) => {
+      updatePreview(e.clientX, e.clientY)
+    }
+
+    const handlePointerLeave = () => {
+      if (previewRef.current) previewRef.current.visible = false
+    }
 
     const handlePointerDown = (e: PointerEvent) => {
       downX = e.clientX
@@ -105,6 +136,7 @@ export function ViewportRoot({ assetIndex, selectedBlockId }: ViewportRootProps)
         renderer.setBlock(remove.x, remove.y, remove.z, AIR_BLOCKSTATE_ID as unknown as number)
         renderer.markAllDirty()
         console.log(`[ViewportRoot] Removed block at ${remove.x},${remove.y},${remove.z}`)
+        updatePreview(e.clientX, e.clientY)
         return
       }
 
@@ -116,15 +148,20 @@ export function ViewportRoot({ assetIndex, selectedBlockId }: ViewportRootProps)
       renderer.setBlock(place.x, place.y, place.z, stateId as unknown as number)
       renderer.markAllDirty()
       console.log(`[ViewportRoot] Placed ${selectedBlockRef.current} at ${place.x},${place.y},${place.z}`)
+      updatePreview(e.clientX, e.clientY)
     }
 
     const preventContextMenu = (e: MouseEvent) => e.preventDefault()
 
+    canvas.addEventListener('pointermove', handlePointerMove)
+    canvas.addEventListener('pointerleave', handlePointerLeave)
     canvas.addEventListener('pointerdown', handlePointerDown)
     canvas.addEventListener('pointerup', handlePointerUp)
     canvas.addEventListener('contextmenu', preventContextMenu)
 
     return () => {
+      canvas.removeEventListener('pointermove', handlePointerMove)
+      canvas.removeEventListener('pointerleave', handlePointerLeave)
       canvas.removeEventListener('pointerdown', handlePointerDown)
       canvas.removeEventListener('pointerup', handlePointerUp)
       canvas.removeEventListener('contextmenu', preventContextMenu)
@@ -184,6 +221,22 @@ export function ViewportRoot({ assetIndex, selectedBlockId }: ViewportRootProps)
       </div>
     </div>
   )
+}
+
+function createPlacementPreview(renderer: RendererCore): THREE.LineSegments {
+  const geometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.02, 1.02, 1.02))
+  const material = new THREE.LineBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.95,
+    depthTest: false,
+  })
+  const lines = new THREE.LineSegments(geometry, material)
+  lines.name = 'placement-preview'
+  lines.visible = false
+  lines.renderOrder = 999
+  renderer.threeScene.add(lines)
+  return lines
 }
 
 function raycastBlockFace(
