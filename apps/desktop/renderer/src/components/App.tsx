@@ -47,12 +47,24 @@ export function App(): React.JSX.Element {
     // the entries weren't serialised across IPC properly.
     const blockstateRows = index.entries.filter(e => e.type === 'blockstate').length
     const textureRows = index.entries.filter(e => e.type === 'texture').length
+    const typeHistogram: Record<string, number> = {}
+    for (const e of index.entries) {
+      typeHistogram[e.type ?? '<undefined>'] = (typeHistogram[e.type ?? '<undefined>'] ?? 0) + 1
+    }
     console.log('[App] Assets loaded:', {
       namespaces: index.namespaces,
       header: { blocks: index.blockstateCount, textures: index.textureCount },
       entriesArray: { total: index.entries.length, blockstate: blockstateRows, texture: textureRows },
-      sample: index.entries.slice(0, 3),
     })
+    // Flatten the sample + histogram into a single-line log so the user
+    // doesn't need to click-expand the previous object.
+    console.log('[App] entries type histogram:', JSON.stringify(typeHistogram))
+    console.log('[App] first entry as JSON:', JSON.stringify(index.entries[0]))
+    console.log('[App] entries 100/500/1000 as JSON:',
+      JSON.stringify(index.entries[100]),
+      JSON.stringify(index.entries[500]),
+      JSON.stringify(index.entries[1000]),
+    )
   }
 
   const handleNewProject = async (name: string) => {
