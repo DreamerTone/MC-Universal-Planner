@@ -1,9 +1,3 @@
-/**
- * packages/renderer-core/src/RendererCore.ts
- *
- * Central renderer — owns WebGL2 context, Three.js scene, and RAF loop.
- */
-
 import * as THREE from 'three'
 import type { World, BlockStateId } from '@mc-planner/world-engine'
 import { WorldRenderer } from './WorldRenderer'
@@ -35,10 +29,7 @@ export class RendererCore {
   private fpsAccum = 0
   private destroyed = false
 
-  constructor(
-    private readonly canvas: HTMLCanvasElement,
-    options: RendererOptions = {}
-  ) {
+  constructor(private readonly canvas: HTMLCanvasElement, options: RendererOptions = {}) {
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: options.antialias ?? true,
@@ -48,9 +39,7 @@ export class RendererCore {
       logarithmicDepthBuffer: true,
     })
 
-    if (!this.renderer.capabilities.isWebGL2) {
-      console.warn('[Renderer] WebGL2 not available')
-    }
+    if (!this.renderer.capabilities.isWebGL2) console.warn('[Renderer] WebGL2 not available')
 
     const dpr = Math.min(window.devicePixelRatio, options.maxPixelRatio ?? 2.0)
     this.renderer.setPixelRatio(dpr)
@@ -90,7 +79,6 @@ export class RendererCore {
     this.resizeObserver = new ResizeObserver(() => this.onResize())
     this.resizeObserver.observe(canvas)
     this.startLoop()
-
     console.log('[RendererCore] Initialized — WebGL2:', this.renderer.capabilities.isWebGL2)
   }
 
@@ -98,13 +86,11 @@ export class RendererCore {
     this.blockMaterial = material
     this.blockShaderUniforms = uniforms
     if (this.worldRenderer) this.worldRenderer.setBlockMaterial(material)
-
     if (this.scene.fog instanceof THREE.Fog) {
       uniforms.uFogColor.value.set(this.scene.fog.color)
       uniforms.uFogNear.value = this.scene.fog.near
       uniforms.uFogFar.value = this.scene.fog.far
     }
-
     console.log('[RendererCore] Block shader material installed')
   }
 
@@ -125,9 +111,9 @@ export class RendererCore {
     this.currentWorld?.chunks.markAllDirty()
   }
 
-  syncRuntimeBlockState(stateId: BlockStateId | number): void {
+  async syncRuntimeBlockState(stateId: BlockStateId | number): Promise<void> {
     if (!this.currentBakedModelRegistry || !this.worldRenderer) return
-    this.worldRenderer.syncBlockState(this.currentBakedModelRegistry, stateId)
+    await this.worldRenderer.syncBlockState(this.currentBakedModelRegistry, stateId)
   }
 
   setBakedModelRegistry(registry: BakedModelRegistry): void {
