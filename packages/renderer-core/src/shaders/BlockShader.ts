@@ -47,18 +47,15 @@
 
 import * as THREE from 'three'
 
+// NOTE: Three.js's ShaderMaterial automatically prepends declarations for
+//       position, normal, uv, modelViewMatrix, projectionMatrix, and
+//       normalMatrix. Declaring them again here triggers a GLSL duplicate-
+//       symbol error and the vertex shader fails to compile silently
+//       (THREE.WebGLProgram: Shader Error 0 - VALIDATE_STATUS false).
+//       We only declare our CUSTOM attributes (ao, tintColor) here.
 const VERTEX_SHADER = /* glsl */`
-precision highp float;
-
-attribute vec3  position;
-attribute vec3  normal;
-attribute vec2  uv;
 attribute float ao;
 attribute vec3  tintColor;
-
-uniform mat4 modelViewMatrix;
-uniform mat4 projectionMatrix;
-uniform mat3 normalMatrix;
 
 varying vec2  vUv;
 varying float vAo;
@@ -87,9 +84,9 @@ void main() {
 }
 `
 
+// Same caveat as VERTEX_SHADER — Three.js's ShaderMaterial provides default
+// precision declarations. We don't need our own `precision highp float;` line.
 const FRAGMENT_SHADER = /* glsl */`
-precision highp float;
-
 uniform sampler2D uAtlas;
 uniform vec3      uFogColor;
 uniform float     uFogNear;
