@@ -14,8 +14,8 @@
  *   - No metalness/roughness maps (Minecraft is flat-shaded)
  *
  * Vertex attributes:
- *  position  (vec3)  — world position of vertex
- *  normal    (vec3)  — face normal (for basic directional shading)
+ *  position  (vec3)  — section-local vertex position
+ *  normal    (vec3)  — block face normal in section/world axes
  *  uv        (vec2)  — atlas UV coordinates
  *  ao        (float) — ambient occlusion factor [0..1], 1=fully lit
  *  tintColor (vec3)  — biome tint color, (1,1,1) for no tint
@@ -63,20 +63,22 @@ varying vec3  vTint;
 varying float vFogDepth;
 varying float vFaceShade;
 
-// Compute Minecraft-style face shading factor from normal direction
+// Compute Minecraft-style face shading factor from block/world face direction.
+// Do NOT use normalMatrix here: that transforms normals into camera/view space,
+// causing brightness to change as the camera orbits. Chunk meshes only translate,
+// so the authored mesh normal is already the stable block-axis direction.
 float faceShading(vec3 n) {
-  // Match vanilla shading: up=1.0, down=0.5, sides depend on axis
-  if (n.y > 0.5)  return 1.00;   // up face
-  if (n.y < -0.5) return 0.50;   // down face
+  if (n.y > 0.5)  return 1.00;     // up face
+  if (n.y < -0.5) return 0.50;     // down face
   if (abs(n.z) > 0.5) return 0.80; // north/south
-  return 0.60;                    // east/west
+  return 0.60;                     // east/west
 }
 
 void main() {
   vUv        = uv;
   vAo        = ao;
   vTint      = tintColor;
-  vFaceShade = faceShading(normalize(normalMatrix * normal));
+  vFaceShade = faceShading(normalize(normal));
 
   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
   vFogDepth  = -mvPosition.z;
@@ -152,7 +154,7 @@ export function createBlockShaderMaterial(
     uFogColor: { value: new THREE.Color(0x87CEEB) },
     uFogNear:  { value: 128 },
     uFogFar:   { value: 512 },
-    uSkyLight: { value: 0.95 },
+    uSkyLight: { value: 1.0 },
   }
 
   const material = new THREE.ShaderMaterial({
