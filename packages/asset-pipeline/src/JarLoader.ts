@@ -198,9 +198,11 @@ async function extractJar(jarPath: string): Promise<AssetIndex['entries']> {
     const parsed = parseAssetPath(entryName, jarPath)
     if (!parsed) continue
 
-    // Store raw data buffer in registry for later access
+    // Store raw data buffer in registry for later access.
+    // The type is part of the key because model JSON and texture PNG files can
+    // share the same resource location, e.g. minecraft:block/stone.
     const buffer = zipEntry.getData()
-    assetRegistry.storeRawData(parsed.resourceLocation, buffer)
+    assetRegistry.storeRawData(parsed.resourceLocation, buffer, parsed.type)
 
     entries.push({
       resourceLocation: parsed.resourceLocation,
