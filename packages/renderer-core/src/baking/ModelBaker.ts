@@ -62,6 +62,8 @@ export interface BakedModel {
   hasTranslucency: boolean
 }
 
+const loggedTextureIssues = new Set<string>()
+
 export class ModelBaker {
   private readonly cache = new Map<string, BakedModel>()
 
@@ -99,7 +101,7 @@ export class ModelBaker {
     let hasTranslucency = false
 
     for (const element of model.elements) {
-      const elementQuads = this.bakeElement(element, model.ambientOcclusion)
+      const elementQuads = this.bakeElement(element, model.ambientOcclusion, modelRef.modelId)
       for (const quad of elementQuads) {
         // Apply blockstate rotation (Y and X axes)
         const rotated = applyBlockstateRotation(
@@ -117,7 +119,7 @@ export class ModelBaker {
     return { quads, isFullCube, hasTranslucency }
   }
 
-  private bakeElement(element: ResolvedElement, ambientOcclusion: boolean): BakedQuad[] {
+  private bakeElement(element: ResolvedElement, ambientOcclusion: boolean, modelId: ResourceLocation): BakedQuad[] {
     const quads: BakedQuad[] = []
     const [fx, fy, fz] = element.from
     const [tx, ty, tz] = element.to
@@ -142,7 +144,7 @@ export class ModelBaker {
       if (!face) continue  // Face not declared → not rendered
 
       const quad = this.bakeFace(
-        dir, name, face, x0, y0, z0, x1, y1, z1, shade
+        dir, name, face, x0, y0, z0, x1, y1, z1, shade, modelId
       )
       if (quad) quads.push(quad)
     }
@@ -162,8 +164,26 @@ export class ModelBaker {
     face: ResolvedFace,
     x0: number, y0: number, z0: number,
     x1: number, y1: number, z1: number,
-    shade: boolean
+    shade: boolean,
+    modelId: ResourceLocation
   ): BakedQuad | null {
+    if (!this.sprites.has(face.texture)) {
+      const key = `${modelId}|${face.texture}`
+      if (!loggedTextureIssues.has(key)) {
+        loggedTextureIssues.add(key)
+        console.warn(
+          `[ModelBaker] Atlas missing texture for model ${modelId}: ${face.texture}. ` +
+          `Using minecraft:block/missing.`
+        )
+      }
+    } else if (face.texture === 'minecraft:block/missing') {
+      const key = `${modelId}|missing`
+      if (!loggedTextureIssues.has(key)) {
+        loggedTextureIssues.add(key)
+        console.warn(`[ModelBaker] Model ${modelId} resolved face texture to minecraft:block/missing`)
+      }
+    }
+
     const sprite = this.sprites.get(face.texture)
     const [uv_u1, uv_v1, uv_u2, uv_v2] = face.uv
 
