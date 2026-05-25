@@ -163,7 +163,7 @@ export function App(): React.JSX.Element {
               ))}
             </div>
             <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
-              Click platform: place at Y=64. Right-click: remove placed block.
+              Left-click a block face to place the selected block. Right-click a block to remove it.
             </div>
           </div>
         </aside>
