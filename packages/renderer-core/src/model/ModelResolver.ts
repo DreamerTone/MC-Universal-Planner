@@ -179,7 +179,6 @@ export class ModelResolver {
         from: [0, 0, 0],
         to: [16, 16, 16],
         shade: true,
-        rotation: undefined,
         faces: {
           north: { uv: [0, 0, 16, 16], texture: 'minecraft:block/missing' as ResourceLocation, cullface: 'north', uvRotation: 0, tintIndex: -1 },
           south: { uv: [0, 0, 16, 16], texture: 'minecraft:block/missing' as ResourceLocation, cullface: 'south', uvRotation: 0, tintIndex: -1 },
@@ -293,20 +292,21 @@ function resolveElement(el: ModelElement, textures: Record<string, string>): Res
     resolvedFaces[dir] = resolveFace(face, el.from, el.to, dir, textures)
   }
 
-  return {
+  const out: ResolvedElement = {
     from: el.from,
     to:   el.to,
-    rotation: el.rotation
-      ? {
-          origin: el.rotation.origin,
-          axis:   el.rotation.axis,
-          angle:  el.rotation.angle,
-          rescale: el.rotation.rescale ?? false,
-        }
-      : undefined,
     shade:  el.shade ?? true,
     faces:  resolvedFaces,
   }
+  if (el.rotation) {
+    out.rotation = {
+      origin: el.rotation.origin,
+      axis:   el.rotation.axis,
+      angle:  el.rotation.angle,
+      rescale: el.rotation.rescale ?? false,
+    }
+  }
+  return out
 }
 
 function resolveFace(

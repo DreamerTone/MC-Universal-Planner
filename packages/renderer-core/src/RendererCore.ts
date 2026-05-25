@@ -47,6 +47,9 @@ export class RendererCore {
       powerPreference: 'high-performance',
       preserveDrawingBuffer: false,
       alpha: false,
+      // Logarithmic depth must be passed at construction time in r164+;
+      // it is no longer assignable as a property afterwards.
+      logarithmicDepthBuffer: true,
     })
 
     if (!this.renderer.capabilities.isWebGL2) {
@@ -58,7 +61,6 @@ export class RendererCore {
     this.renderer.setSize(canvas.clientWidth, canvas.clientHeight, false)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.toneMappingExposure = 1.0
-    this.renderer.logarithmicDepthBuffer = true
 
     this.scene = new THREE.Scene()
     this.scene.background = new THREE.Color(0x87CEEB)

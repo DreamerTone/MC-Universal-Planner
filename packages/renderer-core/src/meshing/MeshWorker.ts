@@ -141,12 +141,14 @@ function handleMeshRequest(request: MeshingRequest): void {
  */
 function collectTransferables(b: RenderBuffers | null, out: ArrayBuffer[]): void {
     if (!b) return;
+    // TS 5.7+ types TypedArray.buffer as ArrayBufferLike (covers SharedArrayBuffer).
+    // We only ever construct these with plain ArrayBuffer backing, so the cast is safe.
     out.push(
-        b.position.buffer,
-        b.normal.buffer,
-        b.uv.buffer,
-        b.ao.buffer,
-        b.tintColor.buffer,
-        b.index.buffer,
+        b.position.buffer as ArrayBuffer,
+        b.normal.buffer as ArrayBuffer,
+        b.uv.buffer as ArrayBuffer,
+        b.ao.buffer as ArrayBuffer,
+        b.tintColor.buffer as ArrayBuffer,
+        b.index.buffer as ArrayBuffer,
     );
 }

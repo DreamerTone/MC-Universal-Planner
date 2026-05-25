@@ -1,6 +1,6 @@
 export { AtlasBuilder, AtlasSpriteRegistry, globalAtlasBuilder } from './AtlasBuilder'
 export type { AtlasResult, AtlasBuildProgress } from './AtlasBuilder'
-export { AtlasPacker, packRects } from './AtlasPacker'
+export { packRects } from './AtlasPacker'
 export type { PackRect, PackedRect, PackResult } from './AtlasPacker'
 export { AtlasAnimator, globalAtlasAnimator, parseAnimationMeta } from './AtlasAnimator'
 export type { AnimationMeta } from './AtlasAnimator'

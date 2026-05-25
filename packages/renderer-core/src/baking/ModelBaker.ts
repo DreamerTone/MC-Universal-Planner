@@ -252,6 +252,9 @@ export class ModelBaker {
           x1, y0, z0,
           x0, y0, z0,
         ])
+      default:
+        // Unreachable — FaceDir is 0..5 exhaustively covered above.
+        return new Float32Array(12)
     }
   }
 

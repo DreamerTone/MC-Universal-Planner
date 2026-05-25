@@ -41,24 +41,26 @@ import {
 
 // ── Y-axis face rotation table ─────────────────────────────────────────────
 // Index: [currentFace][clockwise90DegreeSteps]
-const Y_ROTATE_FACE: Readonly<Record<FaceDir, FaceDir[]>> = {
+// Cast to Record<FaceDir, FaceDir[]> because computed-keys-from-numeric-const
+// widen to `number` in the inferred object type.
+const Y_ROTATE_FACE = {
   [FACE_DIR_NORTH]: [FACE_DIR_NORTH, FACE_DIR_WEST,  FACE_DIR_SOUTH, FACE_DIR_EAST],
   [FACE_DIR_SOUTH]: [FACE_DIR_SOUTH, FACE_DIR_EAST,  FACE_DIR_NORTH, FACE_DIR_WEST],
   [FACE_DIR_EAST]:  [FACE_DIR_EAST,  FACE_DIR_NORTH, FACE_DIR_WEST,  FACE_DIR_SOUTH],
   [FACE_DIR_WEST]:  [FACE_DIR_WEST,  FACE_DIR_SOUTH, FACE_DIR_EAST,  FACE_DIR_NORTH],
   [FACE_DIR_UP]:    [FACE_DIR_UP,    FACE_DIR_UP,    FACE_DIR_UP,    FACE_DIR_UP],
   [FACE_DIR_DOWN]:  [FACE_DIR_DOWN,  FACE_DIR_DOWN,  FACE_DIR_DOWN,  FACE_DIR_DOWN],
-}
+} as Readonly<Record<FaceDir, FaceDir[]>>
 
 // ── X-axis face rotation table ─────────────────────────────────────────────
-const X_ROTATE_FACE: Readonly<Record<FaceDir, FaceDir[]>> = {
+const X_ROTATE_FACE = {
   [FACE_DIR_NORTH]: [FACE_DIR_NORTH, FACE_DIR_DOWN,  FACE_DIR_SOUTH, FACE_DIR_UP],
   [FACE_DIR_SOUTH]: [FACE_DIR_SOUTH, FACE_DIR_UP,    FACE_DIR_NORTH, FACE_DIR_DOWN],
   [FACE_DIR_EAST]:  [FACE_DIR_EAST,  FACE_DIR_EAST,  FACE_DIR_EAST,  FACE_DIR_EAST],
   [FACE_DIR_WEST]:  [FACE_DIR_WEST,  FACE_DIR_WEST,  FACE_DIR_WEST,  FACE_DIR_WEST],
   [FACE_DIR_UP]:    [FACE_DIR_UP,    FACE_DIR_NORTH, FACE_DIR_DOWN,  FACE_DIR_SOUTH],
   [FACE_DIR_DOWN]:  [FACE_DIR_DOWN,  FACE_DIR_SOUTH, FACE_DIR_UP,    FACE_DIR_NORTH],
-}
+} as Readonly<Record<FaceDir, FaceDir[]>>
 
 // ── Sine/cosine lookup for 0/90/180/270 ───────────────────────────────────
 const SIN = [0, 1, 0, -1]  // 0=0°, 1=90°, 2=180°, 3=270°

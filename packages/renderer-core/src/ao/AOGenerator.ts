@@ -39,26 +39,29 @@ export class AOGenerator {
         // Step 2: Determine orthogonal secondary vectors matching the specific vertex corner
         // This simulates looking out from the face towards the neighboring blocks
         if (dy !== 0) { // Up/Down faces
-            const vOffsetsX = [-1, -1,  1,  1];
-            const vOffsetsZ = [-1,  1,  1, -1];
-            
-            s1x = vOffsetsX[vertexIndex]; s1y = dy; s1z = 0;
-            s2x = 0;                      s2y = dy; s2z = vOffsetsZ[vertexIndex];
-            c1x = vOffsetsX[vertexIndex]; c1y = dy; c1z = vOffsetsZ[vertexIndex];
+            const vOffsetsX = [-1, -1,  1,  1] as const;
+            const vOffsetsZ = [-1,  1,  1, -1] as const;
+            const ox = vOffsetsX[vertexIndex] ?? 0;
+            const oz = vOffsetsZ[vertexIndex] ?? 0;
+            s1x = ox; s1y = dy; s1z = 0;
+            s2x = 0;  s2y = dy; s2z = oz;
+            c1x = ox; c1y = dy; c1z = oz;
         } else if (dz !== 0) { // North/South faces
-            const vOffsetsX = [-1, -1,  1,  1];
-            const vOffsetsY = [-1,  1,  1, -1];
-
-            s1x = vOffsetsX[vertexIndex]; s1y = 0;                      s1z = dz;
-            s2x = 0;                      s2y = vOffsetsY[vertexIndex]; s2z = dz;
-            c1x = vOffsetsX[vertexIndex]; c1y = vOffsetsY[vertexIndex]; c1z = dz;
+            const vOffsetsX = [-1, -1,  1,  1] as const;
+            const vOffsetsY = [-1,  1,  1, -1] as const;
+            const ox = vOffsetsX[vertexIndex] ?? 0;
+            const oy = vOffsetsY[vertexIndex] ?? 0;
+            s1x = ox; s1y = 0;  s1z = dz;
+            s2x = 0;  s2y = oy; s2z = dz;
+            c1x = ox; c1y = oy; c1z = dz;
         } else if (dx !== 0) { // West/East faces
-            const vOffsetsZ = [-1, -1,  1,  1];
-            const vOffsetsY = [-1,  1,  1, -1];
-
-            s1x = dx; s1y = 0;                      s1z = vOffsetsZ[vertexIndex];
-            s2x = dx; s2y = vOffsetsY[vertexIndex]; s2z = 0;
-            c1x = dx; c1y = vOffsetsY[vertexIndex]; c1z = vOffsetsZ[vertexIndex];
+            const vOffsetsZ = [-1, -1,  1,  1] as const;
+            const vOffsetsY = [-1,  1,  1, -1] as const;
+            const oz = vOffsetsZ[vertexIndex] ?? 0;
+            const oy = vOffsetsY[vertexIndex] ?? 0;
+            s1x = dx; s1y = 0;  s1z = oz;
+            s2x = dx; s2y = oy; s2z = 0;
+            c1x = dx; c1y = oy; c1z = oz;
         }
 
         // Step 3: Sample the 3 ambient blocks

@@ -82,7 +82,7 @@ export class BlockstateLoader {
       `[BlockstateLoader] Compiled ${result.compiled} blockstates, ${result.errors} errors`
     )
 
-    return result
+    return { blockstatesCompiled: result.compiled, errors: result.errors }
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────

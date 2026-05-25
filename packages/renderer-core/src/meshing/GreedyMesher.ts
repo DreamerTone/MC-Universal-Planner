@@ -121,7 +121,7 @@ export class GreedyMesher {
             maskIdx = 0;
             for (let d2 = 0; d2 < 16; d2++) {
                 for (let d1 = 0; d1 < 16; d1++, maskIdx++) {
-                    const blockId = mask[maskIdx];
+                    const blockId = mask[maskIdx] ?? 0;
                     if (blockId === 0) continue;
 
                     // Find max width: contiguous run along d1 with matching id.

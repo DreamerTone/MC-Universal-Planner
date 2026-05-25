@@ -268,9 +268,11 @@ export class WorldRenderer {
             }
         }
 
-        const transferables: ArrayBuffer[] = [mainSection.buffer];
+        // TS 5.7+ types TypedArray.buffer as ArrayBufferLike; these are all
+        // plain ArrayBuffer-backed so the cast is safe.
+        const transferables: ArrayBuffer[] = [mainSection.buffer as ArrayBuffer];
         for (const key of Object.keys(neighbors)) {
-            transferables.push(neighbors[key]!.buffer);
+            transferables.push(neighbors[key]!.buffer as ArrayBuffer);
         }
 
         const request: MeshingRequest = {
