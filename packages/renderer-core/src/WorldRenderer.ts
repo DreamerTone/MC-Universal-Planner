@@ -1,9 +1,3 @@
-/**
- * packages/renderer-core/src/WorldRenderer.ts
- *
- * Bridges the world engine (block data) with the Three.js scene.
- */
-
 import * as THREE from 'three';
 import type { World, MeshJob, ChunkSection } from '@mc-planner/world-engine';
 import { MeshDirtyQueue, SECTION_VOLUME } from '@mc-planner/world-engine';
@@ -11,7 +5,7 @@ import type { RendererCore } from './RendererCore';
 import type { BakedModelRegistry } from './baking/BakedModelRegistry';
 import type { BakedModel } from './baking/ModelBaker';
 import type { BakedQuad, FaceDir } from './baking/BakedQuad';
-import type { MeshingRequest, MeshingResult, MeshSampleQuad, RenderBuffers } from './types/meshing';
+import type { MeshingRequest, MeshingResult, MeshSampleQuad, RenderBuffers, StaticMeshQuad } from './types/meshing';
 import type { RenderProfile, SimpleCubeProfile } from './classification/RenderProfile';
 
 export interface ChunkMeshData {
@@ -39,8 +33,8 @@ function bakedFaceToMesherFace(face: FaceDir): number {
     }
 }
 
-function profileFaceToMesherFace(face: FaceDir): number {
-    return bakedFaceToMesherFace(face);
+function bakedCullFaceToMesherFace(face: FaceDir | -1): number {
+    return face === -1 ? -1 : bakedFaceToMesherFace(face);
 }
 
 export class WorldRenderer {
@@ -83,30 +77,36 @@ export class WorldRenderer {
 
     setBlockMaterial(material: THREE.Material): void {
         this.opaqueMaterial = material;
-        for (const mesh of this.opaqueMeshes.values()) {
-            mesh.material = material;
-        }
+        for (const mesh of this.opaqueMeshes.values()) mesh.material = material;
         console.log(`[WorldRenderer] Block shader applied to ${this.opaqueMeshes.size} opaque meshes`);
     }
 
     setBakedModelRegistry(registry: BakedModelRegistry): void {
         if (!this.worker) return;
 
-        const cacheEntries: [number, MeshSampleQuad[]][] = [];
+        const cubeCacheEntries: [number, MeshSampleQuad[]][] = [];
+        const staticCacheEntries: [number, StaticMeshQuad[]][] = [];
         const opaqueIds: number[] = [];
         let simpleCubeCount = 0;
-        let fallbackCount = 0;
+        let cubeFallbackCount = 0;
+        let staticModelCount = 0;
 
         for (const [stateId, entry] of registry.stateEntries()) {
-            const sampleQuads = this.profileToSampleQuads(entry.profile);
-            if (sampleQuads.length > 0) {
-                cacheEntries.push([stateId as number, sampleQuads]);
+            const profileQuads = this.profileToSampleQuads(entry.profile);
+            if (profileQuads.length > 0) {
+                cubeCacheEntries.push([stateId as number, profileQuads]);
                 simpleCubeCount++;
             } else {
-                const fallbackQuads = this.modelsToSampleQuads(entry.models);
-                if (fallbackQuads.length > 0) {
-                    cacheEntries.push([stateId as number, fallbackQuads]);
-                    fallbackCount++;
+                const cubeFallbackQuads = this.modelsToSampleQuads(entry.models);
+                if (cubeFallbackQuads.length > 0) {
+                    cubeCacheEntries.push([stateId as number, cubeFallbackQuads]);
+                    cubeFallbackCount++;
+                } else {
+                    const staticQuads = this.modelsToStaticQuads(entry.models);
+                    if (staticQuads.length > 0) {
+                        staticCacheEntries.push([stateId as number, staticQuads]);
+                        staticModelCount++;
+                    }
                 }
             }
 
@@ -116,24 +116,25 @@ export class WorldRenderer {
         }
 
         this.opaqueIdSet = new Set(opaqueIds);
-
         this.worker.postMessage({ type: 'INIT_REGISTRIES', opaqueIds });
-        if (cacheEntries.length > 0) {
-            this.worker.postMessage({ type: 'UPDATE_BAKED_CACHE', cacheEntries });
+
+        if (cubeCacheEntries.length > 0) {
+            this.worker.postMessage({ type: 'UPDATE_BAKED_CACHE', cacheEntries: cubeCacheEntries });
+        }
+        if (staticCacheEntries.length > 0) {
+            this.worker.postMessage({ type: 'UPDATE_STATIC_MODEL_CACHE', cacheEntries: staticCacheEntries });
         }
 
         console.log(
-            `[WorldRenderer] Worker synced — ${cacheEntries.length} mesh entries ` +
-            `(${simpleCubeCount} simple cubes, ${fallbackCount} baked fallbacks), ` +
-            `${opaqueIds.length} opaque states`,
+            `[WorldRenderer] Worker synced — ${cubeCacheEntries.length} cube mesh entries ` +
+            `(${simpleCubeCount} simple cubes, ${cubeFallbackCount} cube fallbacks), ` +
+            `${staticCacheEntries.length} static model entries, ${opaqueIds.length} opaque states`,
         );
     }
 
     update(cameraX: number, cameraZ: number): void {
         const dirtyEntries = this.world.chunks.drainDirtyQueue();
-        if (dirtyEntries.length > 0) {
-            this.dirtyQueue.enqueue(dirtyEntries, cameraX, cameraZ);
-        }
+        if (dirtyEntries.length > 0) this.dirtyQueue.enqueue(dirtyEntries, cameraX, cameraZ);
         const jobs = this.dirtyQueue.dequeue();
         for (const job of jobs) this.dispatchMeshJob(job);
     }
@@ -153,14 +154,9 @@ export class WorldRenderer {
 
     private initMeshWorker(): void {
         try {
-            this.worker = new Worker(
-                new URL('./meshing/MeshWorker.ts', import.meta.url),
-                { type: 'module' },
-            );
+            this.worker = new Worker(new URL('./meshing/MeshWorker.ts', import.meta.url), { type: 'module' });
             this.worker.onmessage = (e: MessageEvent) => this.onWorkerMessage(e.data);
-            this.worker.onerror = (e: ErrorEvent) => {
-                console.error('[WorldRenderer] MeshWorker error:', e.message);
-            };
+            this.worker.onerror = (e: ErrorEvent) => console.error('[WorldRenderer] MeshWorker error:', e.message);
         } catch (err) {
             console.error('[WorldRenderer] Failed to spawn MeshWorker:', err);
             this.worker = null;
@@ -173,36 +169,27 @@ export class WorldRenderer {
             this.onMeshComplete(data.result as MeshingResult);
             return;
         }
-        if (data.type === 'MESH_ERROR') {
-            console.warn(`[WorldRenderer] Mesh job ${data.jobId} failed: ${data.error}`);
-        }
+        if (data.type === 'MESH_ERROR') console.warn(`[WorldRenderer] Mesh job ${data.jobId} failed: ${data.error}`);
     }
 
     private dispatchMeshJob(job: MeshJob): void {
         if (!this.worker) return;
-
         const { cx, cz } = job.chunkPos;
         const sy = job.sectionY;
         const centreChunk = this.world.chunks.getChunk(cx, cz);
         if (!centreChunk) return;
 
-        const centreSection = centreChunk.getSection(sy);
-        const mainSection = this.sectionToFlatArray(centreSection);
-
+        const mainSection = this.sectionToFlatArray(centreChunk.getSection(sy));
         const neighbors: { [key: string]: Uint32Array } = {};
+
         for (let dx = -1; dx <= 1; dx++) {
             for (let dy = -1; dy <= 1; dy++) {
                 for (let dz = -1; dz <= 1; dz++) {
                     if (dx === 0 && dy === 0 && dz === 0) continue;
                     const ny = sy + dy;
                     if (ny < 0 || ny > 23) continue;
-
-                    const neighbourChunk =
-                        dx === 0 && dz === 0
-                            ? centreChunk
-                            : this.world.chunks.getChunk(cx + dx, cz + dz);
+                    const neighbourChunk = dx === 0 && dz === 0 ? centreChunk : this.world.chunks.getChunk(cx + dx, cz + dz);
                     if (!neighbourChunk) continue;
-
                     const neighbourSection = neighbourChunk.getSection(ny);
                     if (!neighbourSection || neighbourSection.isEmpty) continue;
                     neighbors[`${dx}|${dy}|${dz}`] = this.sectionToFlatArray(neighbourSection);
@@ -211,9 +198,7 @@ export class WorldRenderer {
         }
 
         const transferables: ArrayBuffer[] = [mainSection.buffer as ArrayBuffer];
-        for (const key of Object.keys(neighbors)) {
-            transferables.push(neighbors[key]!.buffer as ArrayBuffer);
-        }
+        for (const key of Object.keys(neighbors)) transferables.push(neighbors[key]!.buffer as ArrayBuffer);
 
         const request: MeshingRequest = {
             jobId: this.nextJobId++,
@@ -230,10 +215,8 @@ export class WorldRenderer {
     private onMeshComplete(result: MeshingResult): void {
         this.dirtyQueue.markComplete({ cx: result.sectionX, cz: result.sectionZ }, result.sectionY);
         const key = sectionKey(result.sectionX, result.sectionZ, result.sectionY);
-        this.uploadOrRemove(this.opaqueMeshes, key, result.buffers.opaque, this.opaqueMaterial,
-            result.sectionX, result.sectionY, result.sectionZ);
-        this.uploadOrRemove(this.translucentMeshes, key, result.buffers.translucent, this.translucentMaterial,
-            result.sectionX, result.sectionY, result.sectionZ);
+        this.uploadOrRemove(this.opaqueMeshes, key, result.buffers.opaque, this.opaqueMaterial, result.sectionX, result.sectionY, result.sectionZ);
+        this.uploadOrRemove(this.translucentMeshes, key, result.buffers.translucent, this.translucentMaterial, result.sectionX, result.sectionY, result.sectionZ);
     }
 
     private uploadOrRemove(
@@ -282,33 +265,26 @@ export class WorldRenderer {
     private sectionToFlatArray(section: ChunkSection | undefined): Uint32Array {
         const out = new Uint32Array(SECTION_VOLUME);
         if (!section || section.isEmpty) return out;
-        for (let i = 0; i < SECTION_VOLUME; i++) {
-            out[i] = section.getBlockState(i) as number;
-        }
+        for (let i = 0; i < SECTION_VOLUME; i++) out[i] = section.getBlockState(i) as number;
         return out;
     }
 
     private profileToSampleQuads(profile: RenderProfile): MeshSampleQuad[] {
-        if (profile.kind !== 'simple_cube') return [];
-        return this.simpleCubeToSampleQuads(profile);
+        return profile.kind === 'simple_cube' ? this.simpleCubeToSampleQuads(profile) : [];
     }
 
     private simpleCubeToSampleQuads(profile: SimpleCubeProfile): MeshSampleQuad[] {
-        const out: MeshSampleQuad[] = [];
-        for (const face of Object.values(profile.faces)) {
-            out.push({
-                faceDir: profileFaceToMesherFace(face.face),
-                textureAtlasId: 0,
-                u0: face.u0,
-                v0: face.v0,
-                u1: face.u1,
-                v1: face.v1,
-                tintIndex: face.tintIndex,
-                shade: face.shade,
-                isTranslucent: !profile.opaque,
-            });
-        }
-        return out;
+        return Object.values(profile.faces).map(face => ({
+            faceDir: bakedFaceToMesherFace(face.face),
+            textureAtlasId: 0,
+            u0: face.u0,
+            v0: face.v0,
+            u1: face.u1,
+            v1: face.v1,
+            tintIndex: face.tintIndex,
+            shade: face.shade,
+            isTranslucent: !profile.opaque,
+        }));
     }
 
     private modelsToSampleQuads(models: BakedModel[]): MeshSampleQuad[] {
@@ -323,21 +299,11 @@ export class WorldRenderer {
         }
 
         for (const [mesherFace, q] of byFace) {
-            let u0 = q.uvs[0]!, v0 = q.uvs[1]!;
-            let u1 = q.uvs[0]!, v1 = q.uvs[1]!;
-            for (let i = 0; i < 4; i++) {
-                const u = q.uvs[i * 2]!;
-                const v = q.uvs[i * 2 + 1]!;
-                if (u < u0) u0 = u;
-                if (v < v0) v0 = v;
-                if (u > u1) u1 = u;
-                if (v > v1) v1 = v;
-            }
-
+            const bounds = this.uvBounds(q);
             out.push({
                 faceDir: mesherFace,
                 textureAtlasId: 0,
-                u0, v0, u1, v1,
+                ...bounds,
                 tintIndex: q.tintIndex,
                 shade: q.shade,
                 isTranslucent: cube.hasTranslucency,
@@ -345,6 +311,38 @@ export class WorldRenderer {
         }
 
         return out;
+    }
+
+    private modelsToStaticQuads(models: BakedModel[]): StaticMeshQuad[] {
+        const out: StaticMeshQuad[] = [];
+        for (const model of models) {
+            for (const quad of model.quads) {
+                out.push({
+                    positions: Array.from(quad.positions),
+                    uvs: Array.from(quad.uvs),
+                    faceDir: bakedFaceToMesherFace(quad.face),
+                    cullFace: bakedCullFaceToMesherFace(quad.cullFace),
+                    tintIndex: quad.tintIndex,
+                    shade: quad.shade,
+                    isTranslucent: model.hasTranslucency,
+                });
+            }
+        }
+        return out;
+    }
+
+    private uvBounds(q: BakedQuad): { u0: number; v0: number; u1: number; v1: number } {
+        let u0 = q.uvs[0]!, v0 = q.uvs[1]!;
+        let u1 = q.uvs[0]!, v1 = q.uvs[1]!;
+        for (let i = 0; i < 4; i++) {
+            const u = q.uvs[i * 2]!;
+            const v = q.uvs[i * 2 + 1]!;
+            if (u < u0) u0 = u;
+            if (v < v0) v0 = v;
+            if (u > u1) u1 = u;
+            if (v > v1) v1 = v;
+        }
+        return { u0, v0, u1, v1 };
     }
 
     private profileIsOpaque(profile: RenderProfile): boolean {
