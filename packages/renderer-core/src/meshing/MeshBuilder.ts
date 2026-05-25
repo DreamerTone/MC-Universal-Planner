@@ -45,7 +45,7 @@ export class MeshBuilder {
                 vIdx++;
             }
 
-            this.writeQuadIndices(index, iIdx, q * 4);
+            this.writeQuadIndices(index, iIdx, q * 4, quad.faceDir);
             iIdx += 6;
         }
 
@@ -91,14 +91,28 @@ export class MeshBuilder {
                 vIdx++;
             }
 
-            this.writeQuadIndices(index, iIdx, q * 4);
+            this.writeQuadIndices(index, iIdx, q * 4, quad.faceDir);
             iIdx += 6;
         }
 
         return { position, normal, uv, ao, tintColor, index };
     }
 
-    private static writeQuadIndices(index: Uint32Array, iIdx: number, base: number): void {
+    private static writeQuadIndices(index: Uint32Array, iIdx: number, base: number, faceDir: number): void {
+        // The vertex layouts below are authored so 0/1/2/3 are outward for
+        // down/up/north/south, but west/east need the opposite winding. Without
+        // this, west/east perimeter faces are backface-culled from outside,
+        // making a solid platform look open/hollow at the edges.
+        if (faceDir === 4 || faceDir === 5) {
+            index[iIdx]     = base;
+            index[iIdx + 1] = base + 3;
+            index[iIdx + 2] = base + 1;
+            index[iIdx + 3] = base + 1;
+            index[iIdx + 4] = base + 3;
+            index[iIdx + 5] = base + 2;
+            return;
+        }
+
         index[iIdx]     = base;
         index[iIdx + 1] = base + 1;
         index[iIdx + 2] = base + 3;
