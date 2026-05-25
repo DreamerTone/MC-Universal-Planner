@@ -53,12 +53,26 @@ export class BakedModelRegistry {
     return baked
   }
 
+  async getEntryAsync(stateId: BlockStateId, seed = 0): Promise<BakedStateEntry> {
+    const cached = this.entriesByState.get(stateId)
+    if (cached !== undefined && (cached.models.length > 0 || this.isKnownEmptyState(stateId))) {
+      return cached
+    }
+
+    return this.bakeAsync(stateId, seed)
+  }
+
   async prebake(stateIds: BlockStateId[]): Promise<void> {
     for (const id of stateIds) {
       if (!this.entriesByState.has(id)) {
         await this.bakeAsync(id, 0)
       }
     }
+  }
+
+  private isKnownEmptyState(stateId: BlockStateId): boolean {
+    const blockState = globalBlockStateRegistry.resolve(stateId)
+    return !blockState || blockState.id === 'minecraft:air' as any
   }
 
   private bakeSync(stateId: BlockStateId, seed: number): BakedStateEntry {
