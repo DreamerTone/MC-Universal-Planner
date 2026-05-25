@@ -140,3 +140,4 @@ export class BakedModelRegistry {
   *entries(): IterableIterator<[BlockStateId, BakedModel[]]> {
     yield* this.models.entries()
   }
+}
