@@ -2,48 +2,35 @@
  * apps/desktop/renderer/src/components/ViewportRoot.tsx
  *
  * Three.js viewport host component.
- *
- * CRITICAL ARCHITECTURE NOTE:
- * This component owns the <canvas> element and delegates ALL rendering
- * to packages/renderer-core. React NEVER touches the canvas context.
- *
- * Responsibilities:
- *  - Lifecycle of the RendererCore + initial test World
- *  - Watching the loaded AssetIndex and kicking the PipelineOrchestrator
- *    (atlas → resolver → baked registry → shader → re-mesh) whenever a
- *    new set of JARs has finished indexing.
  */
 
 import React, { useEffect, useRef } from 'react'
+import * as THREE from 'three'
 import type { RendererCore } from '@mc-planner/renderer-core'
 import type { AssetIndex } from '@mc-planner/shared'
 
 interface ViewportRootProps {
   assetIndex: AssetIndex | null
+  selectedBlockId: string
 }
 
-export function ViewportRoot({ assetIndex }: ViewportRootProps): React.JSX.Element {
+const PLATFORM_Y = 63
+const PLACE_Y = 64
+const PLATFORM_SIZE = 32
+
+export function ViewportRoot({ assetIndex, selectedBlockId }: ViewportRootProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  // The live RendererCore — set by the init effect, read by the pipeline
-  // effect. Stored in a ref because it's not React state (we never want a
-  // re-render when the renderer changes; the canvas owns its own lifecycle).
   const rendererRef = useRef<RendererCore | null>(null)
-  // Bumped each time the renderer is (re)created so the pipeline effect
-  // re-runs and re-binds against the new RendererCore instance even when
-  // assetIndex is unchanged.
+  const selectedBlockRef = useRef(selectedBlockId)
   const [rendererReadyTick, setRendererReadyTick] = React.useState(0)
 
-  // ── Renderer + test world lifecycle ────────────────────────────────────
+  useEffect(() => {
+    selectedBlockRef.current = selectedBlockId
+  }, [selectedBlockId])
+
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-
-    // Guard against React 18 StrictMode double-invoke: the effect mounts,
-    // unmounts immediately, then mounts again. The async init() can resolve
-    // AFTER the first cleanup has run, leaving a stale renderer bound to
-    // the canvas and a second one created on remount. Two renderers + two
-    // OrbitCameraControllers fighting over the same canvas means input
-    // events fire twice and the camera never visibly moves.
     let cancelled = false
 
     async function init() {
@@ -58,17 +45,14 @@ export function ViewportRoot({ assetIndex }: ViewportRootProps): React.JSX.Eleme
       const renderer = new RendererCore(canvas!, { antialias: true, maxPixelRatio: 2 })
       const world = new World()
 
-      // ── Test scene: flat 32×32 stone platform at Y=63 ──────────────────
-      // This validates the entire pipeline from world → dirty queue → mesh worker.
-      // Will be replaced by real schematic/project loading in later stages.
       const stoneId = globalBlockStateRegistry.register({
         id: 'minecraft:stone' as any,
         properties: {},
       })
 
-      for (let x = 0; x < 32; x++) {
-        for (let z = 0; z < 32; z++) {
-          world.chunks.setBlock(x, 63, z, stoneId)
+      for (let x = 0; x < PLATFORM_SIZE; x++) {
+        for (let z = 0; z < PLATFORM_SIZE; z++) {
+          world.chunks.setBlock(x, PLATFORM_Y, z, stoneId)
         }
       }
 
@@ -88,12 +72,62 @@ export function ViewportRoot({ assetIndex }: ViewportRootProps): React.JSX.Eleme
     }
   }, [])
 
-  // ── Pipeline kick on AssetIndex change ─────────────────────────────────
-  // When AssetLoader finishes indexing a set of JARs and BlockstateLoader has
-  // compiled them, the parent passes the AssetIndex down. We then run the
-  // full atlas → baker → shader pipeline against the new index and trigger
-  // a full chunk re-mesh so the test platform (and any future placed blocks)
-  // render with real textures instead of the placeholder material.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    let downX = 0
+    let downY = 0
+    let downButton = -1
+
+    const handlePointerDown = (e: PointerEvent) => {
+      downX = e.clientX
+      downY = e.clientY
+      downButton = e.button
+    }
+
+    const handlePointerUp = async (e: PointerEvent) => {
+      const moved = Math.hypot(e.clientX - downX, e.clientY - downY)
+      if (moved > 4) return
+      if (downButton !== 0 && downButton !== 2) return
+
+      const renderer = rendererRef.current
+      if (!renderer) return
+
+      const hit = raycastPlatformCell(canvas, renderer.threeCamera, e.clientX, e.clientY)
+      if (!hit) return
+
+      const { globalBlockStateRegistry, AIR_BLOCKSTATE_ID } = await import('@mc-planner/world-engine')
+
+      if (downButton === 2) {
+        renderer.setBlock(hit.x, PLACE_Y, hit.z, AIR_BLOCKSTATE_ID as unknown as number)
+        renderer.markAllDirty()
+        console.log(`[ViewportRoot] Removed block at ${hit.x},${PLACE_Y},${hit.z}`)
+        return
+      }
+
+      const stateId = globalBlockStateRegistry.register({
+        id: selectedBlockRef.current as any,
+        properties: {},
+      })
+      renderer.setBlock(hit.x, PLACE_Y, hit.z, stateId as unknown as number)
+      renderer.markAllDirty()
+      console.log(`[ViewportRoot] Placed ${selectedBlockRef.current} at ${hit.x},${PLACE_Y},${hit.z}`)
+    }
+
+    const preventContextMenu = (e: MouseEvent) => e.preventDefault()
+
+    canvas.addEventListener('pointerdown', handlePointerDown)
+    canvas.addEventListener('pointerup', handlePointerUp)
+    canvas.addEventListener('contextmenu', preventContextMenu)
+
+    return () => {
+      canvas.removeEventListener('pointerdown', handlePointerDown)
+      canvas.removeEventListener('pointerup', handlePointerUp)
+      canvas.removeEventListener('contextmenu', preventContextMenu)
+    }
+  }, [])
+
   useEffect(() => {
     if (!assetIndex) return
     const renderer = rendererRef.current
@@ -109,8 +143,6 @@ export function ViewportRoot({ assetIndex }: ViewportRootProps): React.JSX.Eleme
       try {
         await orchestrator.run(assetIndex!, progress => {
           if (cancelled) return
-          // Forward to the status bar via a custom event — keeps this
-          // component decoupled from the StatusBar implementation.
           window.dispatchEvent(new CustomEvent('pipeline:progress', { detail: progress }))
         })
         if (!cancelled) {
@@ -134,6 +166,44 @@ export function ViewportRoot({ assetIndex }: ViewportRootProps): React.JSX.Eleme
         ref={canvasRef}
         style={{ display: 'block', width: '100%', height: '100%', cursor: 'crosshair' }}
       />
+      <div style={{
+        position: 'absolute',
+        left: 12,
+        top: 12,
+        padding: '6px 8px',
+        borderRadius: 4,
+        background: 'rgba(0, 0, 0, 0.45)',
+        color: '#fff',
+        fontSize: 12,
+        pointerEvents: 'none',
+      }}>
+        Left click: place {selectedBlockId.replace(/^minecraft:/, '')} · Right click: remove
+      </div>
     </div>
   )
+}
+
+function raycastPlatformCell(
+  canvas: HTMLCanvasElement,
+  camera: THREE.PerspectiveCamera,
+  clientX: number,
+  clientY: number
+): { x: number; z: number } | null {
+  const rect = canvas.getBoundingClientRect()
+  const ndc = new THREE.Vector2(
+    ((clientX - rect.left) / rect.width) * 2 - 1,
+    -(((clientY - rect.top) / rect.height) * 2 - 1)
+  )
+
+  const raycaster = new THREE.Raycaster()
+  raycaster.setFromCamera(ndc, camera)
+
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -PLACE_Y)
+  const hit = new THREE.Vector3()
+  if (!raycaster.ray.intersectPlane(plane, hit)) return null
+
+  const x = Math.floor(hit.x)
+  const z = Math.floor(hit.z)
+  if (x < 0 || z < 0 || x >= PLATFORM_SIZE || z >= PLATFORM_SIZE) return null
+  return { x, z }
 }
