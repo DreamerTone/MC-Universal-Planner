@@ -72,6 +72,12 @@ export class RendererCore {
       distance: 48,
       yaw: Math.PI / 4,
       pitch: Math.PI / 5,
+      // The current verification scene is a 1-block-thick platform. Keep the
+      // orbit camera above the horizon so users cannot accidentally orbit under
+      // or through the slab and mistake inside/back-side views for mesh bugs.
+      minPitch: 0.05,
+      maxPitch: Math.PI / 2 - 0.05,
+      minDistance: 12,
     })
 
     this.chunkGroup = new THREE.Group()
@@ -80,9 +86,6 @@ export class RendererCore {
 
     const grid = new THREE.GridHelper(512, 32, 0x444444, 0x333333)
     grid.name = 'debug-ground-grid'
-    // Keep the debug grid below the current test platform. It used to sit at
-    // y=63.5, inside the 1-block-thick stone slab, which made the grid appear
-    // to slice through real block geometry.
     grid.position.y = 62.95
     this.scene.add(grid)
 
