@@ -55,5 +55,19 @@ Get-ChildItem -Path packages -Recurse -Include *.js, *.js.map, *.d.ts, *.d.ts.ma
     $strayCount++
   }
 
+# Wipe stale .tsbuildinfo files. These live next to tsconfig.json (not inside
+# dist/) so deleting dist/ alone leaves them orphaned. TypeScript then trusts
+# the stale buildinfo, thinks the build is already up-to-date, and refuses
+# to re-emit the missing .js output. Killing them forces a full rebuild on
+# the next 'tsc -b' invocation.
+$buildinfoCount = 0
+Get-ChildItem -Path . -Recurse -Filter "*.tsbuildinfo" -ErrorAction SilentlyContinue |
+  Where-Object { $_.FullName -notmatch 'node_modules' } |
+  ForEach-Object {
+    Remove-Item -Force $_.FullName
+    Write-Host "removed $($_.FullName)"
+    $buildinfoCount++
+  }
+
 Write-Host ""
-Write-Host "Done. $strayCount stray .js/.d.ts files removed from packages/*/src/."
+Write-Host "Done. $strayCount stray .js/.d.ts removed, $buildinfoCount .tsbuildinfo files cleared."
