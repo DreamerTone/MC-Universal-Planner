@@ -116,10 +116,8 @@ void main() {
   // Apply directional face shading (darker on down/side faces)
   texColor.rgb *= vFaceShade;
 
-  // Apply ambient occlusion (multiply, not additive — matches vanilla).
-  // Vertex AO is in [0,1] with 1 = fully lit; mesher writes 1.0 when AO
-  // generation hasn't run yet so this is safe before stage 12.
-  texColor.rgb *= vAo;
+  // Apply ambient occlusion with a temporary lower bound while AO sampling is validated.
+  texColor.rgb *= clamp(vAo, 0.72, 1.0);
 
   // Apply sky light scaling
   texColor.rgb *= uSkyLight;
