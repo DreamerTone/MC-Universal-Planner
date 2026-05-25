@@ -100,31 +100,13 @@ varying float vFogDepth;
 varying float vFaceShade;
 
 void main() {
-  // Sample atlas texture
-  vec4 texColor = texture2D(uAtlas, vUv);
-
-  // Alpha discard for cutout geometry (glass panes, leaves in FAST mode)
-  // Full alpha cutout at 0.1 threshold — matches Minecraft's alphatest
-  if (texColor.a < 0.1) discard;
-
-  // Apply biome tint color
-  texColor.rgb *= vTint;
-
-  // Apply directional face shading (darker on down/side faces)
-  texColor.rgb *= vFaceShade;
-
-  // Apply ambient occlusion (multiply, not additive — matching vanilla)
-  // AO is 1.0 at fully exposed corners, <1.0 near geometry
-  texColor.rgb *= vAo;
-
-  // Apply sky light scaling
-  texColor.rgb *= uSkyLight;
-
-  // Linear fog
-  float fogFactor = clamp((vFogDepth - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
-  texColor.rgb = mix(texColor.rgb, uFogColor, fogFactor);
-
-  gl_FragColor = texColor;
+  // ── DIAGNOSTIC OVERRIDE ──────────────────────────────────────────────
+  // Forced solid red, no texture sampling, no discard, no AO multiply.
+  // If we see red blocks → geometry + transforms are fine; bug is in
+  // the texture/uv/alpha pipeline. If we still see nothing → geometry
+  // is degenerate or being frustum-culled. Reverted once the
+  // visibility question is answered.
+  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
 }
 `
 
