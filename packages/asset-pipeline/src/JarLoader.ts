@@ -78,11 +78,33 @@ export async function loadJarFiles(
         'entries[] is empty). Discarding and re-extracting.'
       )
     } else {
+      // Cache hit reuses the metadata index but we STILL have to extract the
+      // raw asset data from the JARs into the in-process AssetRegistry. The
+      // cache file persists only the metadata; raw model/blockstate JSON
+      // lives in the registry's rawData Map which is empty after a process
+      // restart. Without this re-extraction, every getBlockstateJson() and
+      // getModelJson() IPC call returns null and the renderer pipeline
+      // silently produces 0 baked models. JAR hashes matching guarantees
+      // the byte content is identical so we can discard extractJar's
+      // returned entries — the cached metadata is authoritative.
       console.log(
-        `[AssetPipeline] Cache hit — restoring ${cached.entries.length} entries from cache`
+        `[AssetPipeline] Cache hit — re-populating raw data from ${jarPaths.length} JAR(s)`
       )
+      for (let i = 0; i < jarPaths.length; i++) {
+        const jarPath = jarPaths[i]!
+        onProgress({
+          phase: 'extracting',
+          current: i,
+          total: jarPaths.length,
+          currentFile: path.basename(jarPath),
+        })
+        await extractJar(jarPath)
+      }
       assetRegistry.restoreFromCacheIndex(cached)
       onProgress({ phase: 'complete', current: cached.entries.length, total: cached.entries.length })
+      console.log(
+        `[AssetPipeline] Cache hit — restored ${cached.entries.length} entries with raw data`
+      )
       return cached
     }
   } else {
