@@ -22,4 +22,4 @@
 
 export { loadJarFiles } from './JarLoader'
 export { getBlockstateJson, getModelJson, getTextureBuffer, listNamespace } from './AssetRegistry'
-export { clearCache } from './CacheManager'
+export { clearCache, setAssetCacheRoot } from './CacheManager'

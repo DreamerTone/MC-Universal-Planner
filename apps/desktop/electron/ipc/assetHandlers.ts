@@ -24,6 +24,7 @@ import type {
   LoadJarResult,
   AssetIndexEntry,
 } from '@mc-planner/shared'
+import { getAppDirPath } from '../windows/appDirectories'
 
 // Lazy import: asset-pipeline uses adm-zip and sharp which are large.
 // We only load them when the user actually imports assets.
@@ -32,6 +33,9 @@ let assetPipeline: typeof import('@mc-planner/asset-pipeline') | null = null
 async function getAssetPipeline() {
   if (!assetPipeline) {
     assetPipeline = await import('@mc-planner/asset-pipeline')
+    // Inject the cache root from the host — the package is intentionally
+    // ignorant of Electron paths; we hand it the resolved directory here.
+    assetPipeline.setAssetCacheRoot(getAppDirPath('cache'))
   }
   return assetPipeline
 }
