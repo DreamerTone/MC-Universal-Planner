@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { World, MeshJob, ChunkSection } from '@mc-planner/world-engine';
+import type { World, MeshJob, ChunkSection, BlockStateId } from '@mc-planner/world-engine';
 import { MeshDirtyQueue, SECTION_VOLUME } from '@mc-planner/world-engine';
 import type { RendererCore } from './RendererCore';
 import type { BakedModelRegistry } from './baking/BakedModelRegistry';
@@ -92,27 +92,17 @@ export class WorldRenderer {
         let staticModelCount = 0;
 
         for (const [stateId, entry] of registry.stateEntries()) {
-            const profileQuads = this.profileToSampleQuads(entry.profile);
-            if (profileQuads.length > 0) {
-                cubeCacheEntries.push([stateId as number, profileQuads]);
-                simpleCubeCount++;
-            } else {
-                const cubeFallbackQuads = this.modelsToSampleQuads(entry.models);
-                if (cubeFallbackQuads.length > 0) {
-                    cubeCacheEntries.push([stateId as number, cubeFallbackQuads]);
-                    cubeFallbackCount++;
-                } else {
-                    const staticQuads = this.modelsToStaticQuads(entry.models);
-                    if (staticQuads.length > 0) {
-                        staticCacheEntries.push([stateId as number, staticQuads]);
-                        staticModelCount++;
-                    }
-                }
+            const cache = this.entryToWorkerCache(stateId as number, entry.models, entry.profile);
+            if (cache.cube.length > 0) {
+                cubeCacheEntries.push([stateId as number, cache.cube]);
+                if (entry.profile.kind === 'simple_cube') simpleCubeCount++;
+                else cubeFallbackCount++;
+            } else if (cache.static.length > 0) {
+                staticCacheEntries.push([stateId as number, cache.static]);
+                staticModelCount++;
             }
 
-            if (this.profileIsOpaque(entry.profile) || this.isFullCubeOpaque(entry.models)) {
-                opaqueIds.push(stateId as number);
-            }
+            if (cache.opaque) opaqueIds.push(stateId as number);
         }
 
         this.opaqueIdSet = new Set(opaqueIds);
@@ -129,6 +119,37 @@ export class WorldRenderer {
             `[WorldRenderer] Worker synced — ${cubeCacheEntries.length} cube mesh entries ` +
             `(${simpleCubeCount} simple cubes, ${cubeFallbackCount} cube fallbacks), ` +
             `${staticCacheEntries.length} static model entries, ${opaqueIds.length} opaque states`,
+        );
+    }
+
+    syncBlockState(registry: BakedModelRegistry, stateId: BlockStateId | number): void {
+        if (!this.worker) return;
+
+        const entry = registry.getEntry(stateId as BlockStateId, 0);
+        const cache = this.entryToWorkerCache(stateId as number, entry.models, entry.profile);
+
+        if (cache.cube.length > 0) {
+            this.worker.postMessage({
+                type: 'UPDATE_BAKED_CACHE',
+                cacheEntries: [[stateId as number, cache.cube]],
+            });
+        }
+
+        if (cache.static.length > 0) {
+            this.worker.postMessage({
+                type: 'UPDATE_STATIC_MODEL_CACHE',
+                cacheEntries: [[stateId as number, cache.static]],
+            });
+        }
+
+        if (cache.opaque && !this.opaqueIdSet.has(stateId as number)) {
+            this.opaqueIdSet.add(stateId as number);
+            this.worker.postMessage({ type: 'INIT_REGISTRIES', opaqueIds: Array.from(this.opaqueIdSet) });
+        }
+
+        console.log(
+            `[WorldRenderer] Runtime state synced — ${stateId} ` +
+            `(cube=${cache.cube.length}, static=${cache.static.length}, opaque=${cache.opaque})`
         );
     }
 
@@ -267,6 +288,37 @@ export class WorldRenderer {
         if (!section || section.isEmpty) return out;
         for (let i = 0; i < SECTION_VOLUME; i++) out[i] = section.getBlockState(i) as number;
         return out;
+    }
+
+    private entryToWorkerCache(
+        stateId: number,
+        models: BakedModel[],
+        profile: RenderProfile,
+    ): { cube: MeshSampleQuad[]; static: StaticMeshQuad[]; opaque: boolean } {
+        const profileQuads = this.profileToSampleQuads(profile);
+        if (profileQuads.length > 0) {
+            return {
+                cube: profileQuads,
+                static: [],
+                opaque: this.profileIsOpaque(profile),
+            };
+        }
+
+        const cubeFallbackQuads = this.modelsToSampleQuads(models);
+        if (cubeFallbackQuads.length > 0) {
+            return {
+                cube: cubeFallbackQuads,
+                static: [],
+                opaque: this.isFullCubeOpaque(models),
+            };
+        }
+
+        const staticQuads = this.modelsToStaticQuads(models);
+        return {
+            cube: [],
+            static: staticQuads,
+            opaque: this.isFullCubeOpaque(models),
+        };
     }
 
     private profileToSampleQuads(profile: RenderProfile): MeshSampleQuad[] {
