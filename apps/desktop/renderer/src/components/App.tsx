@@ -42,7 +42,17 @@ export function App(): React.JSX.Element {
 
   const handleAssetsLoaded = (index: AssetIndex) => {
     setAssetIndex(index)
-    console.log('[App] Assets loaded:', index.namespaces, index.blockstateCount, 'blocks')
+    // Diagnostic: counts on the index header should match the actual entries
+    // array. If header says 1168 blockstates but the array filter returns 0,
+    // the entries weren't serialised across IPC properly.
+    const blockstateRows = index.entries.filter(e => e.type === 'blockstate').length
+    const textureRows = index.entries.filter(e => e.type === 'texture').length
+    console.log('[App] Assets loaded:', {
+      namespaces: index.namespaces,
+      header: { blocks: index.blockstateCount, textures: index.textureCount },
+      entriesArray: { total: index.entries.length, blockstate: blockstateRows, texture: textureRows },
+      sample: index.entries.slice(0, 3),
+    })
   }
 
   const handleNewProject = async (name: string) => {
