@@ -65,10 +65,8 @@ export class RendererCore {
     this.renderer.toneMappingExposure = 1.0
 
     this.scene = new THREE.Scene()
-    // VISUAL DIAGNOSTIC: bright magenta means fresh RendererCore source is
-    // loaded. If you still see sky-blue, Vite is serving stale bytes.
-    this.scene.background = new THREE.Color(0xFF00FF)
-    this.scene.fog = new THREE.Fog(0xFF00FF, 128, 512)
+    this.scene.background = new THREE.Color(0x87CEEB)
+    this.scene.fog = new THREE.Fog(0x87CEEB, 128, 512)
 
     this.camera = new THREE.PerspectiveCamera(70, canvas.clientWidth / canvas.clientHeight, 0.1, 2048)
     // OrbitCameraController owns camera pose; default frames the test platform.
@@ -96,15 +94,7 @@ export class RendererCore {
     this.resizeObserver.observe(canvas)
     this.startLoop()
 
-    console.log('[RendererCore v2-orbit] Initialized — WebGL2:', this.renderer.capabilities.isWebGL2,
-      '— controller bound:', !!this.cameraController)
-
-    // Visible-outside-console proof that the latest source ran: the OS-level
-    // window title is impossible to cache, filter, or miss. If you see
-    // "MC Universal Planner [v2-orbit]" in the title bar, you're running
-    // fresh code. If you see only "MC Universal Planner", something is
-    // serving a stale renderer-core module.
-    document.title = 'MC Universal Planner [v2-orbit]'
+    console.log('[RendererCore] Initialized — WebGL2:', this.renderer.capabilities.isWebGL2)
   }
 
   // ── Pipeline integration ─────────────────────────────────────────────────
