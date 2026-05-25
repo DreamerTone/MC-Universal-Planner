@@ -49,8 +49,6 @@ export class RendererCore {
       powerPreference: 'high-performance',
       preserveDrawingBuffer: false,
       alpha: false,
-      // Logarithmic depth must be passed at construction time in r164+;
-      // it is no longer assignable as a property afterwards.
       logarithmicDepthBuffer: true,
     })
 
@@ -69,7 +67,6 @@ export class RendererCore {
     this.scene.fog = new THREE.Fog(0x87CEEB, 128, 512)
 
     this.camera = new THREE.PerspectiveCamera(70, canvas.clientWidth / canvas.clientHeight, 0.1, 2048)
-    // OrbitCameraController owns camera pose; default frames the test platform.
     this.cameraController = new OrbitCameraController(this.camera, canvas, {
       target: new THREE.Vector3(16, 64, 16),
       distance: 48,
@@ -82,7 +79,11 @@ export class RendererCore {
     this.scene.add(this.chunkGroup)
 
     const grid = new THREE.GridHelper(512, 32, 0x444444, 0x333333)
-    grid.position.y = 63.5
+    grid.name = 'debug-ground-grid'
+    // Keep the debug grid below the current test platform. It used to sit at
+    // y=63.5, inside the 1-block-thick stone slab, which made the grid appear
+    // to slice through real block geometry.
+    grid.position.y = 62.95
     this.scene.add(grid)
 
     const ambient = new THREE.AmbientLight(0xffffff, 0.4)
@@ -97,22 +98,14 @@ export class RendererCore {
     console.log('[RendererCore] Initialized — WebGL2:', this.renderer.capabilities.isWebGL2)
   }
 
-  // ── Pipeline integration ─────────────────────────────────────────────────
-
-  /**
-   * Called by PipelineOrchestrator after atlas and shader are ready.
-   * Replaces the placeholder MeshStandardMaterial with the block shader.
-   */
   setBlockMaterial(material: THREE.ShaderMaterial, uniforms: BlockShaderUniforms): void {
     this.blockMaterial = material
     this.blockShaderUniforms = uniforms
 
-    // Propagate to WorldRenderer so new section meshes use the block shader
     if (this.worldRenderer) {
       this.worldRenderer.setBlockMaterial(material)
     }
 
-    // Keep fog uniforms in sync with scene fog
     if (this.scene.fog instanceof THREE.Fog) {
       uniforms.uFogColor.value.set(this.scene.fog.color)
       uniforms.uFogNear.value = this.scene.fog.near
@@ -122,23 +115,15 @@ export class RendererCore {
     console.log('[RendererCore] Block shader material installed')
   }
 
-  /** Force all loaded chunks to re-mesh with the new pipeline data */
   invalidateAllChunks(): void {
     this.currentWorld?.chunks.markAllDirty()
     console.log('[RendererCore] All chunks invalidated for remesh')
   }
 
-  /**
-   * Hand the freshly-built BakedModelRegistry to the WorldRenderer so it
-   * can sync the worker's MeshSampleQuad cache and opaque-id set.
-   * Called by PipelineOrchestrator once the atlas + baker are ready.
-   */
   setBakedModelRegistry(registry: BakedModelRegistry): void {
     this.worldRenderer?.setBakedModelRegistry(registry)
     console.log('[RendererCore] BakedModelRegistry handed to WorldRenderer')
   }
-
-  // ── World integration ────────────────────────────────────────────────────
 
   attachWorld(world: World): void {
     this.worldRenderer?.dispose()
@@ -155,8 +140,6 @@ export class RendererCore {
     this.worldRenderer = null
     this.currentWorld = null
   }
-
-  // ── Render loop ──────────────────────────────────────────────────────────
 
   private startLoop(): void {
     const loop = (time: number) => {
