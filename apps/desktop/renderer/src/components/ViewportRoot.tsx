@@ -7,21 +7,33 @@
  * This component owns the <canvas> element and delegates ALL rendering
  * to packages/renderer-core. React NEVER touches the canvas context.
  *
- * Stage 4 update:
- * ViewportRoot now creates a World and attaches it to the RendererCore.
- * A test grid of stone blocks is placed to verify the pipeline end-to-end.
- * Once the block shader (Stage 11) is complete this will show real geometry.
- *
- * The World instance lives here and is passed down to children via context
- * (or a Zustand store — finalized in the UI build stage).
+ * Responsibilities:
+ *  - Lifecycle of the RendererCore + initial test World
+ *  - Watching the loaded AssetIndex and kicking the PipelineOrchestrator
+ *    (atlas → resolver → baked registry → shader → re-mesh) whenever a
+ *    new set of JARs has finished indexing.
  */
 
 import React, { useEffect, useRef } from 'react'
 import type { RendererCore } from '@mc-planner/renderer-core'
+import type { AssetIndex } from '@mc-planner/shared'
 
-export function ViewportRoot(): React.JSX.Element {
+interface ViewportRootProps {
+  assetIndex: AssetIndex | null
+}
+
+export function ViewportRoot({ assetIndex }: ViewportRootProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  // The live RendererCore — set by the init effect, read by the pipeline
+  // effect. Stored in a ref because it's not React state (we never want a
+  // re-render when the renderer changes; the canvas owns its own lifecycle).
+  const rendererRef = useRef<RendererCore | null>(null)
+  // Bumped each time the renderer is (re)created so the pipeline effect
+  // re-runs and re-binds against the new RendererCore instance even when
+  // assetIndex is unchanged.
+  const [rendererReadyTick, setRendererReadyTick] = React.useState(0)
 
+  // ── Renderer + test world lifecycle ────────────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -32,7 +44,6 @@ export function ViewportRoot(): React.JSX.Element {
     // the canvas and a second one created on remount. Two renderers + two
     // OrbitCameraControllers fighting over the same canvas means input
     // events fire twice and the camera never visibly moves.
-    let renderer: RendererCore | null = null
     let cancelled = false
 
     async function init() {
@@ -44,8 +55,7 @@ export function ViewportRoot(): React.JSX.Element {
 
       if (cancelled) return
 
-      renderer = new RendererCore(canvas!, { antialias: true, maxPixelRatio: 2 })
-
+      const renderer = new RendererCore(canvas!, { antialias: true, maxPixelRatio: 2 })
       const world = new World()
 
       // ── Test scene: flat 32×32 stone platform at Y=63 ──────────────────
@@ -63,6 +73,8 @@ export function ViewportRoot(): React.JSX.Element {
       }
 
       renderer.attachWorld(world)
+      rendererRef.current = renderer
+      setRendererReadyTick(t => t + 1)
 
       console.log('[ViewportRoot] Renderer + World initialized. Test scene: 32×32 stone platform.')
     }
@@ -71,10 +83,50 @@ export function ViewportRoot(): React.JSX.Element {
 
     return () => {
       cancelled = true
-      renderer?.destroy()
-      renderer = null
+      rendererRef.current?.destroy()
+      rendererRef.current = null
     }
   }, [])
+
+  // ── Pipeline kick on AssetIndex change ─────────────────────────────────
+  // When AssetLoader finishes indexing a set of JARs and BlockstateLoader has
+  // compiled them, the parent passes the AssetIndex down. We then run the
+  // full atlas → baker → shader pipeline against the new index and trigger
+  // a full chunk re-mesh so the test platform (and any future placed blocks)
+  // render with real textures instead of the placeholder material.
+  useEffect(() => {
+    if (!assetIndex) return
+    const renderer = rendererRef.current
+    if (!renderer) return
+
+    let cancelled = false
+
+    async function runPipeline() {
+      const { PipelineOrchestrator } = await import('@mc-planner/renderer-core')
+      if (cancelled) return
+
+      const orchestrator = new PipelineOrchestrator(renderer!)
+      try {
+        await orchestrator.run(assetIndex!, progress => {
+          if (cancelled) return
+          // Forward to the status bar via a custom event — keeps this
+          // component decoupled from the StatusBar implementation.
+          window.dispatchEvent(new CustomEvent('pipeline:progress', { detail: progress }))
+        })
+        if (!cancelled) {
+          console.log('[ViewportRoot] Pipeline complete — chunks re-meshed with real geometry.')
+        }
+      } catch (err) {
+        if (!cancelled) console.error('[ViewportRoot] Pipeline failed:', err)
+      }
+    }
+
+    runPipeline()
+
+    return () => {
+      cancelled = true
+    }
+  }, [assetIndex, rendererReadyTick])
 
   return (
     <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>

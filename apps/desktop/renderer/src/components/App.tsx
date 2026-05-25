@@ -81,7 +81,7 @@ export function App(): React.JSX.Element {
         }}>
           <AssetLoader onAssetsLoaded={handleAssetsLoaded} />
         </aside>
-        <ViewportRoot />
+        <ViewportRoot assetIndex={assetIndex} />
       </div>
       <StatusBar />
     </div>
