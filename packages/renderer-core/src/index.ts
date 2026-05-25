@@ -55,3 +55,7 @@ export type { BakedModel, BakedQuad, FaceDir } from './baking/index'
 // Shaders
 export { createBlockShaderMaterial, createTranslucentBlockShaderMaterial } from './shaders/index'
 export type { BlockShaderUniforms } from './shaders/index'
+
+// Camera
+export { OrbitCameraController } from './camera/OrbitCameraController'
+export type { OrbitCameraOptions } from './camera/OrbitCameraController'

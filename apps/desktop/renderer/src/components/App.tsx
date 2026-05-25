@@ -20,21 +20,29 @@
  * This prevents React re-renders from interfering with the render loop.
  */
 
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
+import type { AssetIndex } from '@mc-planner/shared'
 import { Toolbar } from './Toolbar'
 import { ViewportRoot } from './ViewportRoot'
 import { StatusBar } from './StatusBar'
 import { WelcomeScreen } from './WelcomeScreen'
+import { AssetLoader } from './AssetLoader'
 
 type AppState = 'welcome' | 'project'
 
 export function App(): React.JSX.Element {
   const [appState, setAppState] = useState<AppState>('welcome')
   const [projectPath, setProjectPath] = useState<string | null>(null)
+  const [assetIndex, setAssetIndex] = useState<AssetIndex | null>(null)
 
   const handleProjectOpen = (path: string) => {
     setProjectPath(path)
     setAppState('project')
+  }
+
+  const handleAssetsLoaded = (index: AssetIndex) => {
+    setAssetIndex(index)
+    console.log('[App] Assets loaded:', index.namespaces, index.blockstateCount, 'blocks')
   }
 
   const handleNewProject = async (name: string) => {
@@ -62,6 +70,17 @@ export function App(): React.JSX.Element {
     }}>
       <Toolbar projectPath={projectPath} />
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <aside style={{
+          width: 280,
+          flexShrink: 0,
+          background: 'var(--color-bg-secondary)',
+          borderRight: '1px solid var(--color-border)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'auto',
+        }}>
+          <AssetLoader onAssetsLoaded={handleAssetsLoaded} />
+        </aside>
         <ViewportRoot />
       </div>
       <StatusBar />

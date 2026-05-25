@@ -14,6 +14,7 @@ import type { World } from '@mc-planner/world-engine'
 import { WorldRenderer } from './WorldRenderer'
 import type { BlockShaderUniforms } from './shaders/BlockShader'
 import type { BakedModelRegistry } from './baking/BakedModelRegistry'
+import { OrbitCameraController } from './camera/OrbitCameraController'
 
 export interface RendererOptions {
   antialias?: boolean
@@ -25,6 +26,7 @@ export class RendererCore {
   private readonly renderer: THREE.WebGLRenderer
   private readonly scene: THREE.Scene
   private readonly camera: THREE.PerspectiveCamera
+  private readonly cameraController: OrbitCameraController
   private readonly chunkGroup: THREE.Group
   private worldRenderer: WorldRenderer | null = null
   private currentWorld: World | null = null
@@ -67,8 +69,13 @@ export class RendererCore {
     this.scene.fog = new THREE.Fog(0x87CEEB, 128, 512)
 
     this.camera = new THREE.PerspectiveCamera(70, canvas.clientWidth / canvas.clientHeight, 0.1, 2048)
-    this.camera.position.set(8, 80, 8)
-    this.camera.lookAt(0, 64, 0)
+    // OrbitCameraController owns camera pose; default frames the test platform.
+    this.cameraController = new OrbitCameraController(this.camera, canvas, {
+      target: new THREE.Vector3(16, 64, 16),
+      distance: 48,
+      yaw: Math.PI / 4,
+      pitch: Math.PI / 5,
+    })
 
     this.chunkGroup = new THREE.Group()
     this.chunkGroup.name = 'chunks'
@@ -197,6 +204,7 @@ export class RendererCore {
     this.destroyed = true
     if (this.animFrameId !== null) cancelAnimationFrame(this.animFrameId)
     this.resizeObserver.disconnect()
+    this.cameraController.dispose()
     this.worldRenderer?.dispose()
     this.blockMaterial?.dispose()
     this.renderer.dispose()
