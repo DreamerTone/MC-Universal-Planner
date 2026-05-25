@@ -18,17 +18,47 @@ const PLATFORM_Y = 63
 const PLATFORM_SIZE = 32
 const MAX_BUILD_Y = 319
 const MIN_BUILD_Y = -64
+const FACINGS = ['north', 'east', 'south', 'west'] as const
+const AXES = ['y', 'x', 'z'] as const
+
+type Facing = typeof FACINGS[number]
+type Axis = typeof AXES[number]
 
 export function ViewportRoot({ assetIndex, selectedBlockId }: ViewportRootProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const rendererRef = useRef<RendererCore | null>(null)
   const selectedBlockRef = useRef(selectedBlockId)
   const previewRef = useRef<THREE.LineSegments | null>(null)
+  const facingRef = useRef<Facing>('north')
+  const axisRef = useRef<Axis>('y')
   const [rendererReadyTick, setRendererReadyTick] = React.useState(0)
+  const [facing, setFacing] = React.useState<Facing>('north')
+  const [axis, setAxis] = React.useState<Axis>('y')
 
   useEffect(() => {
     selectedBlockRef.current = selectedBlockId
   }, [selectedBlockId])
+
+  useEffect(() => { facingRef.current = facing }, [facing])
+  useEffect(() => { axisRef.current = axis }, [axis])
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'r') return
+      const target = e.target as HTMLElement | null
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return
+      e.preventDefault()
+
+      if (e.shiftKey) {
+        setAxis(prev => AXES[(AXES.indexOf(prev) + 1) % AXES.length]!)
+      } else {
+        setFacing(prev => FACINGS[(FACINGS.indexOf(prev) + 1) % FACINGS.length]!)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -141,13 +171,17 @@ export function ViewportRoot({ assetIndex, selectedBlockId }: ViewportRootProps)
       }
 
       const place = hit.place
+      const properties = makePlacementProperties(selectedBlockRef.current, facingRef.current, axisRef.current)
       const stateId = globalBlockStateRegistry.register({
         id: selectedBlockRef.current as any,
-        properties: {},
+        properties,
       })
       renderer.setBlock(place.x, place.y, place.z, stateId as unknown as number)
       renderer.markAllDirty()
-      console.log(`[ViewportRoot] Placed ${selectedBlockRef.current} at ${place.x},${place.y},${place.z}`)
+      console.log(
+        `[ViewportRoot] Placed ${selectedBlockRef.current} at ${place.x},${place.y},${place.z} ` +
+        `props=${JSON.stringify(properties)}`
+      )
       updatePreview(e.clientX, e.clientY)
     }
 
@@ -217,7 +251,8 @@ export function ViewportRoot({ assetIndex, selectedBlockId }: ViewportRootProps)
         fontSize: 12,
         pointerEvents: 'none',
       }}>
-        Left click face: place {selectedBlockId.replace(/^minecraft:/, '')} · Right click: remove clicked block
+        Left click face: place {selectedBlockId.replace(/^minecraft:/, '')} · Right click: remove clicked block<br />
+        R: facing {facing} · Shift+R: axis {axis}
       </div>
     </div>
   )
@@ -269,6 +304,80 @@ function raycastBlockFace(
   if (!isBuildable(place) || !isBuildable(remove)) return null
 
   return { place, remove }
+}
+
+function makePlacementProperties(blockId: string, facing: Facing, axis: Axis): Record<string, string> {
+  const name = blockId.split(':').pop() ?? blockId
+  const props: Record<string, string> = {}
+
+  if (name.endsWith('_stairs')) {
+    props.facing = facing
+    props.half = 'bottom'
+    props.shape = 'straight'
+    props.waterlogged = 'false'
+    return props
+  }
+
+  if (name.endsWith('_slab')) {
+    props.type = 'bottom'
+    props.waterlogged = 'false'
+    return props
+  }
+
+  if (
+    name.endsWith('_log') ||
+    name.endsWith('_wood') ||
+    name.endsWith('_stem') ||
+    name.endsWith('_hyphae') ||
+    name.endsWith('_pillar') ||
+    name.endsWith('basalt')
+  ) {
+    props.axis = axis
+    return props
+  }
+
+  if (
+    name.endsWith('_door') ||
+    name.endsWith('_trapdoor') ||
+    name.endsWith('_button') ||
+    name.endsWith('_fence_gate') ||
+    name.endsWith('_wall_sign') ||
+    name.endsWith('_hanging_sign') ||
+    name.endsWith('_wall_hanging_sign') ||
+    name.endsWith('_ladder') ||
+    name.endsWith('_chest') ||
+    name.endsWith('_furnace') ||
+    name.endsWith('_dispenser') ||
+    name.endsWith('_dropper') ||
+    name.endsWith('_observer') ||
+    name.endsWith('_piston')
+  ) {
+    props.facing = facing
+    if (name.endsWith('_door')) {
+      props.half = 'lower'
+      props.hinge = 'left'
+      props.open = 'false'
+      props.powered = 'false'
+    }
+    if (name.endsWith('_trapdoor')) {
+      props.half = 'bottom'
+      props.open = 'false'
+      props.powered = 'false'
+      props.waterlogged = 'false'
+    }
+    if (name.endsWith('_button')) {
+      props.face = 'wall'
+      props.powered = 'false'
+    }
+    if (name.endsWith('_fence_gate')) {
+      props.in_wall = 'false'
+      props.open = 'false'
+      props.powered = 'false'
+    }
+    return props
+  }
+
+  return props
 }
 
 function vectorToBlockPos(v: THREE.Vector3): BlockPos {
