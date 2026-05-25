@@ -95,17 +95,25 @@ app.whenReady().then(async () => {
 
   // Lock down CSP for renderer. WebGL2 data URIs and blob URLs are needed
   // for texture atlas streaming and worker-generated geometry buffers.
+  // In dev, Vite's React Fast Refresh injects an inline preamble script and
+  // connects to the HMR websocket, so we relax script-src/connect-src for dev only.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    const scriptSrc = isDev
+      ? "script-src 'self' 'unsafe-eval' 'unsafe-inline'"
+      : "script-src 'self' 'unsafe-eval'" // unsafe-eval needed by Three.js shader compilation
+    const connectSrc = isDev
+      ? "connect-src 'self' ws://localhost:* http://localhost:*"
+      : "connect-src 'self'"
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-eval'", // unsafe-eval needed by Three.js shader compilation
+            scriptSrc,
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: blob:",
-            "connect-src 'self' ws://localhost:* http://localhost:*",
+            connectSrc,
             "worker-src 'self' blob:",
           ].join('; ')
         ]
