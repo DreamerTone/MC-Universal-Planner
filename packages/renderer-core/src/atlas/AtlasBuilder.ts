@@ -180,8 +180,13 @@ export class AtlasBuilder {
     // ── Phase 5: Upload to Three.js GPU texture ──────────────────────────────
     onProgress?.({ phase: 'uploading', current: 0, total: 1 })
 
+    // Snapshot the OffscreenCanvas as an ImageBitmap before handing it to
+    // Three. CanvasTexture's interop with OffscreenCanvas is inconsistent
+    // across Three versions (some require the canvas to remain alive, some
+    // upload garbage on the first frame). ImageBitmap is the universally-
+    // supported TexImageSource and always uploads correctly.
     const imageBitmap = await createImageBitmap(canvas)
-    const texture = new THREE.CanvasTexture(canvas as unknown as HTMLCanvasElement)
+    const texture = new THREE.Texture(imageBitmap as unknown as HTMLImageElement)
 
     // Critical rendering settings for correct Minecraft appearance:
     texture.magFilter = THREE.NearestFilter       // Pixelated look (no bilinear blur)
@@ -190,6 +195,7 @@ export class AtlasBuilder {
     texture.colorSpace = THREE.SRGBColorSpace
     texture.wrapS = THREE.ClampToEdgeWrapping
     texture.wrapT = THREE.ClampToEdgeWrapping
+    texture.flipY = false                          // ImageBitmap is already top-down
     texture.needsUpdate = true
 
     onProgress?.({ phase: 'complete', current: total, total })

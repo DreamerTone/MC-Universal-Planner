@@ -100,21 +100,33 @@ varying float vFogDepth;
 varying float vFaceShade;
 
 void main() {
-  // ── DIAGNOSTIC: atlas / UV check ─────────────────────────────────────
-  // Sample the atlas straight, force alpha=1, NO discard, NO tint/ao/
-  // faceshade/skylight multipliers. Reading the result:
-  //   - Real stone texture visible        → atlas + UVs are fine; the
-  //     bug is in one of the multipliers (vTint, vAo, vFaceShade,
-  //     uSkyLight) being zero, or the discard was eating fragments.
-  //   - Solid black plates                → texture2D returns 0,0,0,0;
-  //     atlas texture isn't bound to uAtlas uniform.
-  //   - Garbled / wrong-colour pixels     → UVs are pointing somewhere
-  //     other than the stone sprite in the atlas.
-  //   - vUv shown as red/green gradient   → uncomment the second line
-  //     to inspect the actual UV coordinates being sent.
   vec4 texColor = texture2D(uAtlas, vUv);
-  gl_FragColor  = vec4(texColor.rgb, 1.0);
-  // gl_FragColor = vec4(vUv.x, vUv.y, 0.0, 1.0); // UV visualisation
+
+  // Alpha discard for cutout geometry (glass panes, leaves in FAST mode)
+  // Full alpha cutout at 0.1 threshold — matches Minecraft's alphatest
+  if (texColor.a < 0.1) discard;
+
+  // Apply biome tint. Mesher writes (1,1,1) for untinted blocks; for tinted
+  // ones (grass, foliage, water) it writes the biome color. Safe to
+  // unconditionally multiply because untinted is the identity.
+  texColor.rgb *= vTint;
+
+  // Apply directional face shading (darker on down/side faces)
+  texColor.rgb *= vFaceShade;
+
+  // Apply ambient occlusion (multiply, not additive — matches vanilla).
+  // Vertex AO is in [0,1] with 1 = fully lit; mesher writes 1.0 when AO
+  // generation hasn't run yet so this is safe before stage 12.
+  texColor.rgb *= vAo;
+
+  // Apply sky light scaling
+  texColor.rgb *= uSkyLight;
+
+  // Linear fog
+  float fogFactor = clamp((vFogDepth - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
+  texColor.rgb = mix(texColor.rgb, uFogColor, fogFactor);
+
+  gl_FragColor = vec4(texColor.rgb, 1.0);
 }
 `
 

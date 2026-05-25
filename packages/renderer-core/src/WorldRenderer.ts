@@ -174,13 +174,9 @@ export class WorldRenderer {
     update(cameraX: number, cameraZ: number): void {
         const dirtyEntries = this.world.chunks.drainDirtyQueue();
         if (dirtyEntries.length > 0) {
-            console.log(`[WorldRenderer] drained ${dirtyEntries.length} dirty entries`);
             this.dirtyQueue.enqueue(dirtyEntries, cameraX, cameraZ);
         }
         const jobs = this.dirtyQueue.dequeue();
-        if (jobs.length > 0) {
-            console.log(`[WorldRenderer] dispatching ${jobs.length} mesh jobs`);
-        }
         for (const job of jobs) this.dispatchMeshJob(job);
     }
 
@@ -295,13 +291,6 @@ export class WorldRenderer {
         this.dirtyQueue.markComplete({ cx: result.sectionX, cz: result.sectionZ }, result.sectionY);
 
         const key = sectionKey(result.sectionX, result.sectionZ, result.sectionY);
-        const op = result.buffers.opaque
-        const tr = result.buffers.translucent
-        console.log(
-            `[WorldRenderer] mesh complete @ (${result.sectionX},${result.sectionY},${result.sectionZ}) ` +
-            `opaque=${op ? op.index.length : 'null'} idx, translucent=${tr ? tr.index.length : 'null'} idx`
-        );
-
         this.uploadOrRemove(this.opaqueMeshes, key, result.buffers.opaque, this.opaqueMaterial,
             result.sectionX, result.sectionY, result.sectionZ);
         this.uploadOrRemove(this.translucentMeshes, key, result.buffers.translucent, this.translucentMaterial,
@@ -327,7 +316,6 @@ export class WorldRenderer {
             mesh.frustumCulled = true;
             this.chunkGroup.add(mesh);
             store.set(key, mesh);
-            console.log(`[WorldRenderer] added mesh ${mesh.name} to chunkGroup (now ${this.chunkGroup.children.length} children)`);
         } else {
             mesh.material = material;
         }
