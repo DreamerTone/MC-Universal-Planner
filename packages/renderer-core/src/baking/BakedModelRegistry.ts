@@ -1,27 +1,10 @@
 /**
  * packages/renderer-core/src/baking/BakedModelRegistry.ts
  *
- * Registry that maps BlockStateId → BakedModel[].
+ * Registry that maps BlockStateId → BakedModel[] plus a RenderProfile.
  *
- * A single BlockStateId can map to MULTIPLE BakedModels for multipart blocks
- * (e.g. a fence with north=true has the post model + the north side model).
- *
- * Population:
- *  Called after atlas build and model resolution. For every registered BlockState:
- *   1. Look up compiled blockstate for the block type
- *   2. Evaluate with the state's properties to get CompiledModelRef[]
- *   3. For each ref: resolve model → bake → store
- *
- * Usage:
- *  The chunk mesher calls getModels(stateId) to get quads to emit for a block.
- *  Uses a deterministic seed (packed world position) for weighted random selection.
- *
- * Lazy baking:
- *  With 50,000+ possible block states in a large modpack, eagerly baking all of
- *  them on load would stall for seconds. Instead, we bake on first access:
- *  getModels() triggers a bake if not cached. This means the first time a rare
- *  block appears in a chunk, there's a small bake cost — acceptable.
- *  Common blocks (stone, dirt, grass) are pre-baked on the initial idle pass.
+ * The RenderProfile is the classification-first bridge: simple blocks can use
+ * optimized cube meshing while complex models keep the generic baked fallback.
  */
 
 import type { BlockStateId } from '@mc-planner/world-engine'
@@ -32,10 +15,18 @@ import type { ModelResolver } from '../model/ModelResolver'
 import type { BakedModel } from './ModelBaker'
 import { ModelBaker } from './ModelBaker'
 import type { AtlasSpriteRegistry } from '../atlas/AtlasBuilder'
+import type { RenderProfile } from '../classification/RenderProfile'
+import { EMPTY_RENDER_PROFILE } from '../classification/RenderProfile'
+import { classifyBakedModels } from '../classification/BlockRenderClassifier'
+
+export interface BakedStateEntry {
+  models: BakedModel[]
+  profile: RenderProfile
+}
 
 export class BakedModelRegistry {
   private readonly baker: ModelBaker
-  private readonly models = new Map<BlockStateId, BakedModel[]>()
+  private readonly entriesByState = new Map<BlockStateId, BakedStateEntry>()
   private bakeErrors = 0
 
   constructor(
@@ -45,54 +36,57 @@ export class BakedModelRegistry {
     this.baker = new ModelBaker(sprites)
   }
 
-  /**
-   * Get all BakedModels for a BlockStateId.
-   * Bakes on first access (lazy). Returns empty array for unknown/error states.
-   */
   getModels(stateId: BlockStateId, seed = 0): BakedModel[] {
-    const cached = this.models.get(stateId)
+    return this.getEntry(stateId, seed).models
+  }
+
+  getProfile(stateId: BlockStateId, seed = 0): RenderProfile {
+    return this.getEntry(stateId, seed).profile
+  }
+
+  getEntry(stateId: BlockStateId, seed = 0): BakedStateEntry {
+    const cached = this.entriesByState.get(stateId)
     if (cached !== undefined) return cached
 
     const baked = this.bakeSync(stateId, seed)
-    this.models.set(stateId, baked)
+    this.entriesByState.set(stateId, baked)
     return baked
   }
 
-  /**
-   * Pre-bake a set of block state IDs (called on idle for common blocks).
-   */
   async prebake(stateIds: BlockStateId[]): Promise<void> {
     for (const id of stateIds) {
-      if (!this.models.has(id)) {
+      if (!this.entriesByState.has(id)) {
         await this.bakeAsync(id, 0)
       }
     }
   }
 
-  private bakeSync(stateId: BlockStateId, seed: number): BakedModel[] {
+  private bakeSync(stateId: BlockStateId, seed: number): BakedStateEntry {
     const blockState = globalBlockStateRegistry.resolve(stateId)
-    if (!blockState || blockState.id === 'minecraft:air' as any) return []
+    if (!blockState || blockState.id === 'minecraft:air' as any) {
+      return { models: [], profile: EMPTY_RENDER_PROFILE }
+    }
 
     const compiled = globalBlockstateRegistry.get(blockState.id)
-    if (!compiled) return []
+    if (!compiled) return { models: [], profile: EMPTY_RENDER_PROFILE }
 
     const evalResult = evaluateBlockstate(compiled, blockState.properties, seed)
-    if (evalResult.models.length === 0) return []
+    if (evalResult.models.length === 0) return { models: [], profile: EMPTY_RENDER_PROFILE }
 
     const bakedModels: BakedModel[] = []
 
     for (const modelRef of evalResult.models) {
-      // Synchronous path: use cached resolved model or return placeholder
       const resolved = this.resolver['cache']?.get(modelRef.modelId)
       if (!resolved) {
-        // Schedule async resolve for next frame; return placeholder for now
         this.resolver.resolve(modelRef.modelId).then(r => {
           if (r) {
+            const existingEntry = this.entriesByState.get(stateId) ?? { models: [], profile: EMPTY_RENDER_PROFILE }
             const baked = this.baker.bake(modelRef, r)
-            const existing = this.models.get(stateId) ?? []
-            const idx = bakedModels.indexOf(bakedModels.find(m => !m.quads.length)!)
-            if (idx !== -1) existing[idx] = baked
-            this.models.set(stateId, existing)
+            const models = [...existingEntry.models, baked]
+            this.entriesByState.set(stateId, {
+              models,
+              profile: classifyBakedModels(models),
+            })
           }
         })
         continue
@@ -100,15 +94,26 @@ export class BakedModelRegistry {
       bakedModels.push(this.baker.bake(modelRef, resolved))
     }
 
-    return bakedModels
+    return {
+      models: bakedModels,
+      profile: classifyBakedModels(bakedModels),
+    }
   }
 
-  private async bakeAsync(stateId: BlockStateId, seed: number): Promise<BakedModel[]> {
+  private async bakeAsync(stateId: BlockStateId, seed: number): Promise<BakedStateEntry> {
     const blockState = globalBlockStateRegistry.resolve(stateId)
-    if (!blockState || blockState.id === 'minecraft:air' as any) return []
+    if (!blockState || blockState.id === 'minecraft:air' as any) {
+      const empty = { models: [], profile: EMPTY_RENDER_PROFILE }
+      this.entriesByState.set(stateId, empty)
+      return empty
+    }
 
     const compiled = globalBlockstateRegistry.get(blockState.id)
-    if (!compiled) return []
+    if (!compiled) {
+      const empty = { models: [], profile: EMPTY_RENDER_PROFILE }
+      this.entriesByState.set(stateId, empty)
+      return empty
+    }
 
     const evalResult = evaluateBlockstate(compiled, blockState.properties, seed)
     const bakedModels: BakedModel[] = []
@@ -119,25 +124,35 @@ export class BakedModelRegistry {
         if (resolved) {
           bakedModels.push(this.baker.bake(modelRef, resolved))
         }
-      } catch (e) {
+      } catch {
         this.bakeErrors++
       }
     }
 
-    this.models.set(stateId, bakedModels)
-    return bakedModels
+    const entry = {
+      models: bakedModels,
+      profile: classifyBakedModels(bakedModels),
+    }
+    this.entriesByState.set(stateId, entry)
+    return entry
   }
 
-  get cachedStateCount(): number { return this.models.size }
+  get cachedStateCount(): number { return this.entriesByState.size }
   get errorCount(): number { return this.bakeErrors }
 
-  /**
-   * Iterate every (BlockStateId, BakedModel[]) pair currently cached.
-   * Used by WorldRenderer to push the worker's MeshSampleQuad cache.
-   * Returns a snapshot iterator — safe to mutate the registry mid-iteration
-   * (the underlying Map iterator is over the entries as they were at call time).
-   */
   *entries(): IterableIterator<[BlockStateId, BakedModel[]]> {
-    yield* this.models.entries()
+    for (const [stateId, entry] of this.entriesByState.entries()) {
+      yield [stateId, entry.models]
+    }
+  }
+
+  *profileEntries(): IterableIterator<[BlockStateId, RenderProfile]> {
+    for (const [stateId, entry] of this.entriesByState.entries()) {
+      yield [stateId, entry.profile]
+    }
+  }
+
+  *stateEntries(): IterableIterator<[BlockStateId, BakedStateEntry]> {
+    yield* this.entriesByState.entries()
   }
 }
