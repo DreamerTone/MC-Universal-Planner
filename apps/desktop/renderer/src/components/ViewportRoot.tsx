@@ -26,7 +26,14 @@ export function ViewportRoot(): React.JSX.Element {
     const canvas = canvasRef.current
     if (!canvas) return
 
+    // Guard against React 18 StrictMode double-invoke: the effect mounts,
+    // unmounts immediately, then mounts again. The async init() can resolve
+    // AFTER the first cleanup has run, leaving a stale renderer bound to
+    // the canvas and a second one created on remount. Two renderers + two
+    // OrbitCameraControllers fighting over the same canvas means input
+    // events fire twice and the camera never visibly moves.
     let renderer: RendererCore | null = null
+    let cancelled = false
 
     async function init() {
       const [{ RendererCore }, { World }, { globalBlockStateRegistry }] = await Promise.all([
@@ -34,6 +41,8 @@ export function ViewportRoot(): React.JSX.Element {
         import('@mc-planner/world-engine'),
         import('@mc-planner/world-engine'),
       ])
+
+      if (cancelled) return
 
       renderer = new RendererCore(canvas!, { antialias: true, maxPixelRatio: 2 })
 
@@ -61,7 +70,9 @@ export function ViewportRoot(): React.JSX.Element {
     init().catch(console.error)
 
     return () => {
+      cancelled = true
       renderer?.destroy()
+      renderer = null
     }
   }, [])
 

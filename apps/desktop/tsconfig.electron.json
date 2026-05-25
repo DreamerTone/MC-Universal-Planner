@@ -16,6 +16,7 @@
   "include": ["electron/**/*", "preload/**/*"],
   "exclude": ["node_modules", "dist", "renderer"],
   "references": [
-    { "path": "../../packages/shared" }
+    { "path": "../../packages/shared" },
+    { "path": "../../packages/asset-pipeline" }
   ]
 }
