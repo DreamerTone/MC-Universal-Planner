@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+out/
+.next/
+*.tsbuildinfo
+
+# Vite / bundlers
+.vite/
+.turbo/
+
+# Electron
+release/
+app.asar
+
+# Editors
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Local env / cache
+.env
+.env.local
+.env.*.local
+cache/
+.cache/
+
+# Test / coverage
+coverage/
+*.lcov
+.nyc_output/
+
+# Native build artifacts
+target/
+*.node

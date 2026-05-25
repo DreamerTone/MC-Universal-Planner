@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.electron.json && vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
     "build:renderer": "vite build",
-    "typecheck": "tsc -b --noEmit",
+    "typecheck": "tsc -b",
     "clean": "rimraf dist"
   },
   "dependencies": {
