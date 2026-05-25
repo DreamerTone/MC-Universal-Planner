@@ -176,11 +176,12 @@ export function ViewportRoot({ assetIndex, selectedBlockId }: ViewportRootProps)
         id: selectedBlockRef.current as any,
         properties,
       })
+      renderer.syncRuntimeBlockState(stateId as unknown as number)
       renderer.setBlock(place.x, place.y, place.z, stateId as unknown as number)
       renderer.markAllDirty()
       console.log(
         `[ViewportRoot] Placed ${selectedBlockRef.current} at ${place.x},${place.y},${place.z} ` +
-        `props=${JSON.stringify(properties)}`
+        `state=${stateId} props=${JSON.stringify(properties)}`
       )
       updatePreview(e.clientX, e.clientY)
     }
