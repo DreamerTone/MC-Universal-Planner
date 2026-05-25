@@ -28,6 +28,13 @@
  *     - ambientocclusion: child overrides parent
  *  4. Resolve all "#variable" texture references to actual resource locations
  *
+ * Important inheritance detail:
+ *  Parent elements MUST stay raw until the full parent+child texture map is
+ *  merged. Vanilla models like stone inherit cube_all/cube geometry whose
+ *  faces reference #all, but #all is defined only by the child stone model.
+ *  Resolving parent faces before child texture overrides exist turns those
+ *  faces into minecraft:block/missing.
+ *
  * Resolution terminates at:
  *  - "minecraft:builtin/generated"   (item model, flat sprite)
  *  - "minecraft:builtin/entity"      (entity model, handled by BESR)
@@ -90,6 +97,14 @@ export interface ResolvedFace {
   tintIndex: number
 }
 
+interface MergedRawModel {
+  id: ResourceLocation
+  elements: ModelElement[] | null
+  ambientOcclusion: boolean
+  textures: Record<string, string>
+  modelType: 'geometry' | 'generated' | 'entity'
+}
+
 // ── Model Resolver ─────────────────────────────────────────────────────────
 
 type JsonFetcher = (id: ResourceLocation) => Promise<string | null>
@@ -125,6 +140,37 @@ export class ModelResolver {
     modelId: ResourceLocation,
     visitedIds: Set<ResourceLocation> = new Set()
   ): Promise<ResolvedModel | null> {
+    const merged = await this.resolveMergedRaw(modelId, visitedIds)
+    if (!merged) return this.makeMissingModel(modelId)
+
+    if (merged.modelType === 'entity' || merged.modelType === 'generated') {
+      return {
+        id: modelId,
+        elements: null,
+        ambientOcclusion: merged.ambientOcclusion,
+        textures: {},
+        modelType: merged.modelType,
+      }
+    }
+
+    const resolvedTextures = resolveTextureMap(merged.textures)
+    const elements = merged.elements
+      ? merged.elements.map(el => resolveElement(el, resolvedTextures))
+      : null
+
+    return {
+      id: modelId,
+      elements,
+      ambientOcclusion: merged.ambientOcclusion,
+      textures: resolvedTextures,
+      modelType: merged.modelType,
+    }
+  }
+
+  private async resolveMergedRaw(
+    modelId: ResourceLocation,
+    visitedIds: Set<ResourceLocation>
+  ): Promise<MergedRawModel | null> {
     // Cycle detection
     if (visitedIds.has(modelId)) {
       console.warn(`[ModelResolver] Circular model inheritance detected at ${modelId}`)
@@ -144,7 +190,7 @@ export class ModelResolver {
     const json = await this.fetchJson(modelId)
     if (!json) {
       // Missing model — return a fallback "error" cube (magenta/black checkerboard texture is conventional)
-      return this.makeMissingModel(modelId)
+      return null
     }
 
     let modelData: ModelJson
@@ -152,19 +198,17 @@ export class ModelResolver {
       modelData = JSON.parse(json) as ModelJson
     } catch {
       console.error(`[ModelResolver] Failed to parse model JSON for ${modelId}`)
-      return this.makeMissingModel(modelId)
+      return null
     }
 
-    // Resolve parent first (depth-first)
-    let parentResolved: ResolvedModel | null = null
+    // Resolve parent first (depth-first), but keep inherited elements raw.
+    let parentMerged: MergedRawModel | null = null
     if (modelData.parent) {
       const parentId = normalizeModelId(modelData.parent)
-      parentResolved = await this.resolveUncached(parentId, new Set(visitedIds))
+      parentMerged = await this.resolveMergedRaw(parentId, new Set(visitedIds))
     }
 
-    // Merge child on top of parent
-    const merged = mergeModels(modelId, modelData, parentResolved)
-    return merged
+    return mergeRawModels(modelId, modelData, parentMerged)
   }
 
   private makeMissingModel(id: ResourceLocation): ResolvedModel {
@@ -201,44 +245,34 @@ export class ModelResolver {
 // ── Merge Logic ────────────────────────────────────────────────────────────
 
 /**
- * Merge a child model onto a resolved parent.
+ * Merge a child model onto a raw merged parent.
  *
  * Rules:
  * - textures: child overrides parent (but both contribute to the final map)
  * - elements: child elements REPLACE parent if child has any elements
  * - ambientocclusion: child overrides if specified
  */
-function mergeModels(
+function mergeRawModels(
   id: ResourceLocation,
   child: ModelJson,
-  parent: ResolvedModel | null
-): ResolvedModel {
-  // Start with parent's values as base
+  parent: MergedRawModel | null
+): MergedRawModel {
   const baseTextures: Record<string, string> = { ...(parent?.textures ?? {}) }
   const baseElements = parent?.elements ?? null
   const baseAO = parent?.ambientOcclusion ?? true
   const baseType = parent?.modelType ?? 'geometry'
 
-  // Apply child texture overrides
   const mergedTextures: Record<string, string> = { ...baseTextures, ...(child.textures ?? {}) }
 
-  // Determine elements: child overrides parent if present
-  const rawElements = child.elements && child.elements.length > 0
+  const elements = child.elements && child.elements.length > 0
     ? child.elements
-    : null
-
-  const elements = rawElements
-    ? rawElements.map(el => resolveElement(el, mergedTextures))
     : baseElements
-
-  // Resolve all "#variable" references in the texture map
-  const resolvedTextures = resolveTextureMap(mergedTextures)
 
   return {
     id,
     elements,
     ambientOcclusion: child.ambientocclusion ?? baseAO,
-    textures: resolvedTextures,
+    textures: mergedTextures,
     modelType: baseType,
   }
 }
@@ -271,6 +305,8 @@ function resolveTextureMap(raw: Record<string, string>): Record<string, Resource
   for (const [key, value] of Object.entries(resolved)) {
     if (value.startsWith('#')) {
       resolved[key] = 'minecraft:block/missing'
+    } else if (!value.includes(':')) {
+      resolved[key] = `minecraft:${value}`
     }
   }
 
