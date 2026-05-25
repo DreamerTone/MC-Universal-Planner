@@ -65,8 +65,10 @@ export class RendererCore {
     this.renderer.toneMappingExposure = 1.0
 
     this.scene = new THREE.Scene()
-    this.scene.background = new THREE.Color(0x87CEEB)
-    this.scene.fog = new THREE.Fog(0x87CEEB, 128, 512)
+    // VISUAL DIAGNOSTIC: bright magenta means fresh RendererCore source is
+    // loaded. If you still see sky-blue, Vite is serving stale bytes.
+    this.scene.background = new THREE.Color(0xFF00FF)
+    this.scene.fog = new THREE.Fog(0xFF00FF, 128, 512)
 
     this.camera = new THREE.PerspectiveCamera(70, canvas.clientWidth / canvas.clientHeight, 0.1, 2048)
     // OrbitCameraController owns camera pose; default frames the test platform.
