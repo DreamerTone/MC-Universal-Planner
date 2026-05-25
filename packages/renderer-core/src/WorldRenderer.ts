@@ -122,10 +122,10 @@ export class WorldRenderer {
         );
     }
 
-    syncBlockState(registry: BakedModelRegistry, stateId: BlockStateId | number): void {
+    async syncBlockState(registry: BakedModelRegistry, stateId: BlockStateId | number): Promise<void> {
         if (!this.worker) return;
 
-        const entry = registry.getEntry(stateId as BlockStateId, 0);
+        const entry = await registry.getEntryAsync(stateId as BlockStateId, 0);
         const cache = this.entryToWorkerCache(stateId as number, entry.models, entry.profile);
 
         if (cache.cube.length > 0) {
