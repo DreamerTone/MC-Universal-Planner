@@ -94,7 +94,8 @@ export class RendererCore {
     this.resizeObserver.observe(canvas)
     this.startLoop()
 
-    console.log('[RendererCore] Initialized — WebGL2:', this.renderer.capabilities.isWebGL2)
+    console.log('[RendererCore v2-orbit] Initialized — WebGL2:', this.renderer.capabilities.isWebGL2,
+      '— controller bound:', !!this.cameraController)
   }
 
   // ── Pipeline integration ─────────────────────────────────────────────────
