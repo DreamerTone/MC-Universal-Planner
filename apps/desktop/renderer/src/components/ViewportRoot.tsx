@@ -15,8 +15,9 @@ interface ViewportRootProps {
 }
 
 const PLATFORM_Y = 63
-const PLACE_Y = 64
 const PLATFORM_SIZE = 32
+const MAX_BUILD_Y = 319
+const MIN_BUILD_Y = -64
 
 export function ViewportRoot({ assetIndex, selectedBlockId }: ViewportRootProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -94,25 +95,27 @@ export function ViewportRoot({ assetIndex, selectedBlockId }: ViewportRootProps)
       const renderer = rendererRef.current
       if (!renderer) return
 
-      const hit = raycastPlatformCell(canvas, renderer.threeCamera, e.clientX, e.clientY)
+      const hit = raycastBlockFace(canvas, renderer, e.clientX, e.clientY)
       if (!hit) return
 
       const { globalBlockStateRegistry, AIR_BLOCKSTATE_ID } = await import('@mc-planner/world-engine')
 
       if (downButton === 2) {
-        renderer.setBlock(hit.x, PLACE_Y, hit.z, AIR_BLOCKSTATE_ID as unknown as number)
+        const remove = hit.remove
+        renderer.setBlock(remove.x, remove.y, remove.z, AIR_BLOCKSTATE_ID as unknown as number)
         renderer.markAllDirty()
-        console.log(`[ViewportRoot] Removed block at ${hit.x},${PLACE_Y},${hit.z}`)
+        console.log(`[ViewportRoot] Removed block at ${remove.x},${remove.y},${remove.z}`)
         return
       }
 
+      const place = hit.place
       const stateId = globalBlockStateRegistry.register({
         id: selectedBlockRef.current as any,
         properties: {},
       })
-      renderer.setBlock(hit.x, PLACE_Y, hit.z, stateId as unknown as number)
+      renderer.setBlock(place.x, place.y, place.z, stateId as unknown as number)
       renderer.markAllDirty()
-      console.log(`[ViewportRoot] Placed ${selectedBlockRef.current} at ${hit.x},${PLACE_Y},${hit.z}`)
+      console.log(`[ViewportRoot] Placed ${selectedBlockRef.current} at ${place.x},${place.y},${place.z}`)
     }
 
     const preventContextMenu = (e: MouseEvent) => e.preventDefault()
@@ -177,18 +180,18 @@ export function ViewportRoot({ assetIndex, selectedBlockId }: ViewportRootProps)
         fontSize: 12,
         pointerEvents: 'none',
       }}>
-        Left click: place {selectedBlockId.replace(/^minecraft:/, '')} · Right click: remove
+        Left click face: place {selectedBlockId.replace(/^minecraft:/, '')} · Right click: remove clicked block
       </div>
     </div>
   )
 }
 
-function raycastPlatformCell(
+function raycastBlockFace(
   canvas: HTMLCanvasElement,
-  camera: THREE.PerspectiveCamera,
+  renderer: RendererCore,
   clientX: number,
   clientY: number
-): { x: number; z: number } | null {
+): { place: BlockPos; remove: BlockPos } | null {
   const rect = canvas.getBoundingClientRect()
   const ndc = new THREE.Vector2(
     ((clientX - rect.left) / rect.width) * 2 - 1,
@@ -196,14 +199,45 @@ function raycastPlatformCell(
   )
 
   const raycaster = new THREE.Raycaster()
-  raycaster.setFromCamera(ndc, camera)
+  raycaster.setFromCamera(ndc, renderer.threeCamera)
 
-  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -PLACE_Y)
-  const hit = new THREE.Vector3()
-  if (!raycaster.ray.intersectPlane(plane, hit)) return null
+  const hits = raycaster.intersectObjects(renderer.worldChunkGroup.children, true)
+  const hit = hits.find(h => h.face && h.object instanceof THREE.Mesh)
+  if (!hit || !hit.face) return null
 
-  const x = Math.floor(hit.x)
-  const z = Math.floor(hit.z)
-  if (x < 0 || z < 0 || x >= PLATFORM_SIZE || z >= PLATFORM_SIZE) return null
-  return { x, z }
+  const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
+  normal.set(Math.round(normal.x), Math.round(normal.y), Math.round(normal.z))
+
+  const removePoint = hit.point.clone().addScaledVector(normal, -0.01)
+  const placePoint = hit.point.clone().addScaledVector(normal, 0.01)
+
+  const remove = vectorToBlockPos(removePoint)
+  const place = vectorToBlockPos(placePoint)
+  if (!isBuildable(place) || !isBuildable(remove)) return null
+
+  return { place, remove }
+}
+
+function vectorToBlockPos(v: THREE.Vector3): BlockPos {
+  return {
+    x: Math.floor(v.x),
+    y: Math.floor(v.y),
+    z: Math.floor(v.z),
+  }
+}
+
+function isBuildable(pos: BlockPos): boolean {
+  return (
+    pos.y >= MIN_BUILD_Y &&
+    pos.y <= MAX_BUILD_Y &&
+    Number.isFinite(pos.x) &&
+    Number.isFinite(pos.y) &&
+    Number.isFinite(pos.z)
+  )
+}
+
+interface BlockPos {
+  x: number
+  y: number
+  z: number
 }
