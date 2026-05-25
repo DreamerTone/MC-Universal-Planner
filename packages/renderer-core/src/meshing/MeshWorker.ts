@@ -1,61 +1,12 @@
-/**
- * packages/renderer-core/src/meshing/MeshWorker.ts
- *
- * Dedicated worker thread for chunk meshing.
- *
- * Lives entirely off the main thread to keep the 60fps render loop and
- * React UI responsive even under heavy world mutation (paste, fill, JAR
- * reload). The worker owns three pieces of long-lived state:
- *
- *   1. `opaqueRegistrySet`  — set of blockstate ids whose faces fully cull
- *                             neighbours. Sent ONCE at startup and refreshed
- *                             only when the BlockStateIdRegistry grows
- *                             (e.g. new mod loaded).
- *
- *   2. `sampleQuadCache`    — Map<stateId, MeshSampleQuad[]>. The simplified
- *                             greedy-friendly face form derived from the
- *                             BakedModelRegistry on the main thread.
- *                             Updated via UPDATE_BAKED_CACHE messages.
- *
- *   3. (transient) per-job  — MeshingRequest payload, only alive during a
- *                             single MESH_REQUEST → MESH_RESPONSE cycle.
- *
- * Message protocol (main → worker):
- *
- *   { type: 'INIT_REGISTRIES',   opaqueIds: number[] }
- *   { type: 'UPDATE_BAKED_CACHE', cacheEntries: [number, MeshSampleQuad[]][] }
- *   { type: 'MESH_REQUEST',       request: MeshingRequest }
- *   { type: 'RESET_CACHE' }       — invalidate everything (JAR reload)
- *
- * Worker → main:
- *
- *   { type: 'MESH_RESPONSE',  result: MeshingResult }
- *   { type: 'MESH_ERROR',     jobId, error }
- *
- * Transferables:
- *   The MESH_REQUEST.mainSection + neighbour Uint32Arrays are TRANSFERRED IN
- *   (main side must not touch them after posting).
- *   The MESH_RESPONSE.buffers.{position,normal,uv,ao,tintColor,index}
- *   ArrayBuffers are TRANSFERRED OUT (worker discards them after posting).
- *
- * Data-driven rule:
- *   This worker MUST NOT contain any block- or mod-specific logic. It
- *   receives all behaviour (opacity, face quads) through the message
- *   channel. Importing a new mod adds new state ids and new sample quads;
- *   the worker code itself is untouched.
- */
-
 import { SectionSampler } from './SectionSampler';
 import { GreedyMesher } from './GreedyMesher';
 import { MeshBuilder } from './MeshBuilder';
-import type { MeshingRequest, MeshingResult, MeshSampleQuad, RenderBuffers } from '../types/meshing';
+import type { MeshingRequest, MeshingResult, MeshSampleQuad, RenderBuffers, StaticMeshQuad } from '../types/meshing';
 
-// Thread-local registries. Initialised via INIT_REGISTRIES; mutated by UPDATE_*.
 let opaqueRegistrySet: Set<number> = new Set<number>();
 const sampleQuadCache: Map<number, MeshSampleQuad[]> = new Map<number, MeshSampleQuad[]>();
+const staticModelCache: Map<number, StaticMeshQuad[]> = new Map<number, StaticMeshQuad[]>();
 
-// Worker context is `self` in a dedicated Web Worker.
-// `as any` because TS lib.webworker isn't loaded in this package's tsconfig.
 const ctx: DedicatedWorkerGlobalScope = self as unknown as DedicatedWorkerGlobalScope;
 
 ctx.onmessage = (event: MessageEvent) => {
@@ -68,26 +19,25 @@ ctx.onmessage = (event: MessageEvent) => {
             return;
 
         case 'UPDATE_BAKED_CACHE': {
-            // Patch-in: existing entries with the same id are overwritten,
-            // untouched ids retain their previous baked quads.
             const entries = data.cacheEntries as [number, MeshSampleQuad[]][];
-            for (const [id, quads] of entries) {
-                sampleQuadCache.set(id, quads);
-            }
+            for (const [id, quads] of entries) sampleQuadCache.set(id, quads);
+            return;
+        }
+
+        case 'UPDATE_STATIC_MODEL_CACHE': {
+            const entries = data.cacheEntries as [number, StaticMeshQuad[]][];
+            for (const [id, quads] of entries) staticModelCache.set(id, quads);
             return;
         }
 
         case 'RESET_CACHE':
             sampleQuadCache.clear();
+            staticModelCache.clear();
             opaqueRegistrySet.clear();
             return;
 
         case 'MESH_REQUEST':
             handleMeshRequest(data.request as MeshingRequest);
-            return;
-
-        default:
-            // Unknown message — ignore; future protocol versions may add types.
             return;
     }
 };
@@ -98,17 +48,20 @@ function handleMeshRequest(request: MeshingRequest): void {
         const mesher = new GreedyMesher(
             sampler,
             (id) => opaqueRegistrySet.has(id),
-            // Returns null for unknown ids — the greedy mesher silently
-            // skips emission, preserving the data-driven rule. No fallback
-            // cube is emitted (would create phantom geometry for placeholder
-            // states during async asset loading).
             (id) => sampleQuadCache.get(id) ?? null
         );
 
         const { opaque, translucent } = mesher.generateMesh();
+        const staticBuckets = emitStaticModels(sampler);
 
-        const opaqueBuffers = MeshBuilder.buildBuffers(opaque);
-        const translucentBuffers = MeshBuilder.buildBuffers(translucent);
+        const opaqueBuffers = mergeBuffers(
+            MeshBuilder.buildBuffers(opaque),
+            MeshBuilder.buildStaticBuffers(staticBuckets.opaque)
+        );
+        const translucentBuffers = mergeBuffers(
+            MeshBuilder.buildBuffers(translucent),
+            MeshBuilder.buildStaticBuffers(staticBuckets.translucent)
+        );
 
         const result: MeshingResult = {
             jobId: request.jobId,
@@ -124,7 +77,6 @@ function handleMeshRequest(request: MeshingRequest): void {
         const transferables: ArrayBuffer[] = [];
         collectTransferables(opaqueBuffers, transferables);
         collectTransferables(translucentBuffers, transferables);
-
         ctx.postMessage({ type: 'MESH_RESPONSE', result }, transferables);
     } catch (err) {
         ctx.postMessage({
@@ -135,14 +87,88 @@ function handleMeshRequest(request: MeshingRequest): void {
     }
 }
 
-/**
- * Append the five typed-array buffers of a RenderBuffers block to the
- * transfer list. Skips nulls (empty mesh side) silently.
- */
+function emitStaticModels(sampler: SectionSampler): { opaque: StaticMeshQuad[]; translucent: StaticMeshQuad[] } {
+    const opaque: StaticMeshQuad[] = [];
+    const translucent: StaticMeshQuad[] = [];
+
+    for (let y = 0; y < 16; y++) {
+        for (let z = 0; z < 16; z++) {
+            for (let x = 0; x < 16; x++) {
+                const stateId = sampler.getLocalBlockStateId(x, y, z);
+                if (stateId === 0) continue;
+
+                const quads = staticModelCache.get(stateId);
+                if (!quads || quads.length === 0) continue;
+
+                for (const quad of quads) {
+                    if (quad.cullFace !== -1 && isCullFaceHidden(sampler, x, y, z, quad.cullFace)) {
+                        continue;
+                    }
+
+                    const placed = placeStaticQuad(quad, x, y, z);
+                    if (quad.isTranslucent) translucent.push(placed);
+                    else opaque.push(placed);
+                }
+            }
+        }
+    }
+
+    return { opaque, translucent };
+}
+
+function isCullFaceHidden(sampler: SectionSampler, x: number, y: number, z: number, faceDir: number): boolean {
+    let nx = x, ny = y, nz = z;
+    switch (faceDir) {
+        case 0: ny--; break;
+        case 1: ny++; break;
+        case 2: nz--; break;
+        case 3: nz++; break;
+        case 4: nx--; break;
+        case 5: nx++; break;
+        default: return false;
+    }
+    return sampler.isFaceOpaque(nx, ny, nz, (id) => opaqueRegistrySet.has(id));
+}
+
+function placeStaticQuad(quad: StaticMeshQuad, x: number, y: number, z: number): StaticMeshQuad {
+    const positions = new Array<number>(12);
+    for (let i = 0; i < 4; i++) {
+        positions[i * 3] = (quad.positions[i * 3] ?? 0) + x;
+        positions[i * 3 + 1] = (quad.positions[i * 3 + 1] ?? 0) + y;
+        positions[i * 3 + 2] = (quad.positions[i * 3 + 2] ?? 0) + z;
+    }
+    return { ...quad, positions };
+}
+
+function mergeBuffers(a: RenderBuffers | null, b: RenderBuffers | null): RenderBuffers | null {
+    if (!a) return b;
+    if (!b) return a;
+
+    const aVertexCount = a.position.length / 3;
+    const position = concatFloat32(a.position, b.position);
+    const normal = concatFloat32(a.normal, b.normal);
+    const uv = concatFloat32(a.uv, b.uv);
+    const ao = concatFloat32(a.ao, b.ao);
+    const tintColor = concatFloat32(a.tintColor, b.tintColor);
+
+    const index = new Uint32Array(a.index.length + b.index.length);
+    index.set(a.index, 0);
+    for (let i = 0; i < b.index.length; i++) {
+        index[a.index.length + i] = b.index[i]! + aVertexCount;
+    }
+
+    return { position, normal, uv, ao, tintColor, index };
+}
+
+function concatFloat32(a: Float32Array, b: Float32Array): Float32Array {
+    const out = new Float32Array(a.length + b.length);
+    out.set(a, 0);
+    out.set(b, a.length);
+    return out;
+}
+
 function collectTransferables(b: RenderBuffers | null, out: ArrayBuffer[]): void {
     if (!b) return;
-    // TS 5.7+ types TypedArray.buffer as ArrayBufferLike (covers SharedArrayBuffer).
-    // We only ever construct these with plain ArrayBuffer backing, so the cast is safe.
     out.push(
         b.position.buffer as ArrayBuffer,
         b.normal.buffer as ArrayBuffer,
