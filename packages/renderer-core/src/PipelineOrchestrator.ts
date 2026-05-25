@@ -70,7 +70,13 @@ export class PipelineOrchestrator {
     const { material, uniforms } = createBlockShaderMaterial(this.atlasResult.texture)
     this.rendererCore.setBlockMaterial(material, uniforms)
 
-    // ── Step 5: Re-dirty all chunks with real geometry ───────────────────────
+    // ── Step 5: Hand the registry to the WorldRenderer ───────────────────────
+    // This pushes the per-blockstate face data into the mesh worker and
+    // populates the opaque-id set used for face culling. Without this the
+    // worker has no idea what any block looks like and emits nothing.
+    this.rendererCore.setBakedModelRegistry(this.bakedRegistry)
+
+    // ── Step 6: Re-dirty all chunks with real geometry ───────────────────────
     this.rendererCore.invalidateAllChunks()
 
     onProgress?.({ stage: 'complete', current: 1, total: 1 })

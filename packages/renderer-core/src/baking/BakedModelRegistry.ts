@@ -130,4 +130,13 @@ export class BakedModelRegistry {
 
   get cachedStateCount(): number { return this.models.size }
   get errorCount(): number { return this.bakeErrors }
-}
+
+  /**
+   * Iterate every (BlockStateId, BakedModel[]) pair currently cached.
+   * Used by WorldRenderer to push the worker's MeshSampleQuad cache.
+   * Returns a snapshot iterator — safe to mutate the registry mid-iteration
+   * (the underlying Map iterator is over the entries as they were at call time).
+   */
+  *entries(): IterableIterator<[BlockStateId, BakedModel[]]> {
+    yield* this.models.entries()
+  }

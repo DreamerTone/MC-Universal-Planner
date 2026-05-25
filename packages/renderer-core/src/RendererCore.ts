@@ -13,6 +13,7 @@ import * as THREE from 'three'
 import type { World } from '@mc-planner/world-engine'
 import { WorldRenderer } from './WorldRenderer'
 import type { BlockShaderUniforms } from './shaders/BlockShader'
+import type { BakedModelRegistry } from './baking/BakedModelRegistry'
 
 export interface RendererOptions {
   antialias?: boolean
@@ -116,6 +117,16 @@ export class RendererCore {
   invalidateAllChunks(): void {
     this.currentWorld?.chunks.markAllDirty()
     console.log('[RendererCore] All chunks invalidated for remesh')
+  }
+
+  /**
+   * Hand the freshly-built BakedModelRegistry to the WorldRenderer so it
+   * can sync the worker's MeshSampleQuad cache and opaque-id set.
+   * Called by PipelineOrchestrator once the atlas + baker are ready.
+   */
+  setBakedModelRegistry(registry: BakedModelRegistry): void {
+    this.worldRenderer?.setBakedModelRegistry(registry)
+    console.log('[RendererCore] BakedModelRegistry handed to WorldRenderer')
   }
 
   // ── World integration ────────────────────────────────────────────────────

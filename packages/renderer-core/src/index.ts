@@ -8,6 +8,13 @@ export type { RendererOptions } from './RendererCore'
 export { WorldRenderer } from './WorldRenderer'
 export type { ChunkMeshData } from './WorldRenderer'
 
+// Meshing pipeline types (worker protocol surface)
+export type {
+  MeshingRequest, MeshingResult,
+  RenderBuffers, ChunkSectionData, NeighborChunkData,
+  UncompressedQuad, MeshSampleQuad,
+} from './types/meshing'
+
 // Pipeline
 export { PipelineOrchestrator } from './PipelineOrchestrator'
 export type { PipelineProgress } from './PipelineOrchestrator'
