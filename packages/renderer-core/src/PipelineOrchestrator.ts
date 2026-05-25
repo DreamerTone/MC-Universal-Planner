@@ -20,6 +20,7 @@
  */
 
 import type { AssetIndex } from '@mc-planner/shared'
+import { globalBlockStateRegistry, type BlockStateId } from '@mc-planner/world-engine'
 import { ModelResolver } from './model/ModelResolver'
 import { AtlasBuilder, type AtlasResult } from './atlas/AtlasBuilder'
 import { BakedModelRegistry } from './baking/BakedModelRegistry'
@@ -64,19 +65,38 @@ export class PipelineOrchestrator {
     // ── Step 3: Create baked model registry ──────────────────────────────────
     this.bakedRegistry = new BakedModelRegistry(this.resolver, this.atlasResult.sprites)
 
-    // ── Step 4: Wire block shader into WorldRenderer ─────────────────────────
+    // ── Step 4: Pre-bake every BlockState currently in the world registry ───
+    // BakedModelRegistry is lazy — entries() only returns CACHED models. If we
+    // hand it to the worker before anything is baked, the worker receives 0
+    // mesh entries and the world stays empty. Pre-bake every registered
+    // BlockStateId (skipping air at index 0) so the registry has real data to
+    // push downstream. registeredCount returns nextId, so the highest live id
+    // is registeredCount - 1.
+    const stateCount = globalBlockStateRegistry.registeredCount
+    const idsToPrebake: BlockStateId[] = []
+    for (let id = 1; id < stateCount; id++) {
+      idsToPrebake.push(id as BlockStateId)
+    }
+    if (idsToPrebake.length > 0) {
+      onProgress?.({ stage: 'shader', phase: 'baking models', current: 0, total: idsToPrebake.length })
+      await this.bakedRegistry.prebake(idsToPrebake)
+      console.log(`[Pipeline] Pre-baked ${this.bakedRegistry.cachedStateCount} blockstates ` +
+        `(${this.bakedRegistry.errorCount} errors)`)
+    }
+
+    // ── Step 5: Wire block shader into WorldRenderer ─────────────────────────
     onProgress?.({ stage: 'shader', current: 0, total: 1 })
 
     const { material, uniforms } = createBlockShaderMaterial(this.atlasResult.texture)
     this.rendererCore.setBlockMaterial(material, uniforms)
 
-    // ── Step 5: Hand the registry to the WorldRenderer ───────────────────────
+    // ── Step 6: Hand the registry to the WorldRenderer ───────────────────────
     // This pushes the per-blockstate face data into the mesh worker and
     // populates the opaque-id set used for face culling. Without this the
     // worker has no idea what any block looks like and emits nothing.
     this.rendererCore.setBakedModelRegistry(this.bakedRegistry)
 
-    // ── Step 6: Re-dirty all chunks with real geometry ───────────────────────
+    // ── Step 7: Re-dirty all chunks with real geometry ───────────────────────
     this.rendererCore.invalidateAllChunks()
 
     onProgress?.({ stage: 'complete', current: 1, total: 1 })
