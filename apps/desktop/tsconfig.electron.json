@@ -5,10 +5,17 @@
     "module": "CommonJS",
     "moduleResolution": "Node",
     "outDir": "dist/electron",
+    "rootDir": ".",
     "target": "ES2022",
     "lib": ["ES2022"],
-    "verbatimModuleSyntax": false
+    "verbatimModuleSyntax": false,
+    "paths": {
+      "@mc-planner/shared": ["../../packages/shared/dist/index.d.ts"]
+    }
   },
   "include": ["electron/**/*", "preload/**/*"],
-  "exclude": ["node_modules", "dist", "renderer"]
+  "exclude": ["node_modules", "dist", "renderer"],
+  "references": [
+    { "path": "../../packages/shared" }
+  ]
 }

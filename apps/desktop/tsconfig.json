@@ -3,9 +3,22 @@
   "compilerOptions": {
     "composite": true,
     "outDir": "dist/renderer",
+    "rootDir": ".",
     "jsx": "react-jsx",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    // Resolve workspace imports to built .d.ts so the source files
+    // remain under each package's rootDir during composite typecheck.
+    // Vite has its own alias map (vite.config.ts) for dev/build, so
+    // overriding paths here only affects tsc, not the bundler.
+    "paths": {
+      "@mc-planner/shared":         ["../../packages/shared/dist/index.d.ts"],
+      "@mc-planner/renderer-core":  ["../../packages/renderer-core/dist/index.d.ts"]
+    }
   },
   "include": ["renderer/src/**/*", "preload/**/*"],
-  "exclude": ["node_modules", "dist", "electron"]
+  "exclude": ["node_modules", "dist", "electron"],
+  "references": [
+    { "path": "../../packages/shared" },
+    { "path": "../../packages/renderer-core" }
+  ]
 }
