@@ -83,7 +83,7 @@ export class ModelResolver {
         child: ModelDefinition
     ): ModelDefinition {
 
-        return {
+        const merged: ModelDefinition = {
             ...parent,
             ...child,
 
@@ -96,10 +96,12 @@ export class ModelResolver {
                 ...parent.display,
                 ...child.display
             },
-
-            elements:
-                child.elements ??
-                parent.elements
         }
+
+        // exactOptionalPropertyTypes: only set elements if at least one side has it
+        const elements = child.elements ?? parent.elements
+        if (elements) merged.elements = elements
+
+        return merged
     }
 }

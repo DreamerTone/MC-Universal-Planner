@@ -30,7 +30,10 @@ export class ECS {
     query(componentNames: string[]) {
         const result: EntityId[] = []
 
-        const first = this.componentStores.get(componentNames[0])
+        const head = componentNames[0]
+        if (!head) return result
+
+        const first = this.componentStores.get(head)
 
         if (!first) return result
 

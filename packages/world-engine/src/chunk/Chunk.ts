@@ -81,7 +81,7 @@ export class Chunk {
   constructor(pos: ChunkPos, onDirty?: DirtyCallback) {
     this.pos = pos
     this.sections = new Array(SECTIONS_PER_CHUNK).fill(undefined)
-    this.onDirty = onDirty
+    if (onDirty) this.onDirty = onDirty
   }
 
   // ── Block Access ───────────────────────────────────────────────────────────

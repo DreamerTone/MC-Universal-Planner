@@ -1,12 +1,22 @@
 import { ParsedBlockstate } from "./BlockstateParser"
 
+interface CompiledVariantEntry {
+    conditions: Record<string, string>
+    [key: string]: unknown
+}
+
+interface CompiledBlockstate {
+    variants: CompiledVariantEntry[]
+    multipart: unknown[]
+}
+
 export class BlockstateCompiler {
 
     compile(
         parsed: ParsedBlockstate
-    ) {
+    ): CompiledBlockstate {
 
-        const compiled = {
+        const compiled: CompiledBlockstate = {
             variants: [],
             multipart: []
         }
@@ -23,13 +33,13 @@ export class BlockstateCompiler {
 
                         const [k, v] = pair.split("=")
 
-                        conditions[k] = v
+                        if (k) conditions[k] = v ?? ""
                     }
                 }
 
                 compiled.variants.push({
                     conditions,
-                    ...(value as any)
+                    ...(value as Record<string, unknown>)
                 })
             }
         }
